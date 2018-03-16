@@ -18,6 +18,12 @@ enum ParseType
 	VARIABLE,
 };
 
+struct variables
+{
+	std::vector<std::string> names;
+	Types * type;
+};
+
 struct symbol
 {
 	bool isVariable;
@@ -220,90 +226,77 @@ void Parser::getStruct(bool isTypedef)
 	bool isDef=data->token.peek(0).getString()=="{";
 	auto it=data->symbols[0].find(name);
 
-	if (!isDef)
+	auto reg = [&]()
 	{
-		if (it == data->symbols[0].end())
-		{
-			symbol t;
-			t.isDefined = false;
-			t.isVariable = false;
-			t.offSet = -1;
-			strdef.size = -1;
-			data->allStructDef.push_back(strdef);
-			StructRef tpr = std::make_unique<StructType>();
-			tpr->name = name;
-			tpr->structDef = &data->allStructDef[data->allStructDef.size() - 1];
-			data->allTypes.push_back(std::move(tpr));
-			t.type = tpr.get();
-			data->symbols[0].insert(std::pair<std::string, symbol>(name, t));
-		}
-		else if(!it->second.type->isStruct())
-		{
-			addError(std::string("重定义，不同的类型"));
-		}
+		symbol t;
+		t.isDefined = false;
+		t.isVariable = false;
+		t.offSet = -1;
+		strdef.size = -1;
+		data->allStructDef.push_back(strdef);
+		StructRef tpr = std::make_unique<StructType>();
+		tpr->name = name;
+		tpr->structDef = &data->allStructDef[data->allStructDef.size() - 1];
+		data->allTypes.push_back(std::move(tpr));
+		t.type = tpr.get();
+		data->symbols[0].insert(std::pair<std::string, symbol>(name, t));
+	};
 
-		data->token.read();
-
-		return;
+	if (it == data->symbols[0].end())
+	{
+		reg();
+		if (!isDef)
+		{
+			data->token.read();
+			return;
+		}
 	}
+	else if (!it->second.type->isStruct())
+	{
+		addError(std::string("重定义，不同的类型"));
+	}
+	else if (it->second.isDefined)
+	{
+		addError(std::string("结构体重定义"));
+	}
+
+	it = data->symbols[0].find(name);
 
 	/*获取结构体定义*/
 	requireToken("{");
 	
 	while (true)
 	{
-		Types *type = peekType();
-		if (type->isConst)
+		variables vs = getVariables(false);
+
+		if (vs.type->isStatic || vs.type->isConst)
 		{
 			addError(std::string("无效的类型说明符"));
 		}
 
-		while (true)
+		for(int i=0;i<vs.names.size();++i)
 		{
-			auto t = data->token.peek(0);
-
-			if (!t.isIdentifier() || t.isKeyWord())
+			for (int j = 0; j < strdef.members.size(); ++j)
 			{
-				addError(std::string("应输入正确的标识符"));
-			}
-
-			const std::string &s=data->token.peek(0).getString();
-			data->token.read();
-
-			for (int i = 0; i < strdef.members.size(); ++i)
-			{
-				if (strdef.members[i] == s)
+				if (strdef.members[j] == vs.names[i])
 				{
 					addError(std::string("成员重定义"));
 				}
 			}
 
-			strdef.members.push_back(s);
+			strdef.members.push_back(vs.names[i]);
+
 			if (strdef.offSets.empty())
 			{
 				strdef.offSets.push_back(0);
 			}
 			else
 			{
-				strdef.offSets.push_back(strdef.offSets[strdef.offSets.size()-1]+type->getSize());
+				strdef.offSets.push_back(strdef.offSets[strdef.offSets.size() - 1] + vs.type->getSize());
 			}
 
-			strdef.size += type->getSize();
-			strdef.types.push_back(type);
-
-			if (data->token.peek(0).isEos())
-			{
-				data->token.read();
-				break;
-			}
-			else if(data->token.peek(0).getString()==",")
-			{
-				data->token.read();
-			}
-			else
-			{
-				addError(std::string("应输入,"));
-			}
+			strdef.size += vs.type->getSize();
+			strdef.types.push_back(vs.type);
 		}
 
 		if (data->token.peek(0).getString() == "}")
@@ -314,37 +307,8 @@ void Parser::getStruct(bool isTypedef)
 
 	requireToken("}");
 
-	if (it == data->symbols[0].end())
-	{
-		symbol t;
-		t.isDefined = true;
-		t.isVariable = false;
-		t.offSet = -1;
-		data->allStructDef.push_back(strdef);
-		StructRef tpr = std::make_unique<StructType>();
-		tpr->name = name;
-		tpr->structDef=&data->allStructDef[data->allStructDef.size()-1];
-		data->allTypes.push_back(std::move(tpr));
-		t.type = tpr.get();
-		data->symbols[0].insert(std::pair<std::string, symbol>(name, t));
-	}
-	else if (!it->second.type->isStruct())
-	{
-		addError(std::string("重定义，不同的类型")+name);
-	}
-	else
-	{
-		if (it->second.isDefined)
-		{
-			addError(std::string("结构体重定义"));
-		}
-		else
-		{
-			*it->second.type->toStruct()->structDef = strdef;
-			it->second.isDefined = true;
-		}
-	}
-
+	*it->second.type->toStruct()->structDef = strdef;
+	it->second.isDefined = true;
 	//todo,全局变量的解析
 
 
@@ -354,6 +318,7 @@ void Parser::getUnion(bool isTypedef)
 {
 	bool isStatic = false;
 	bool isConst = false;
+	UnionDef unidef;
 
 	while (true)
 	{
@@ -402,77 +367,68 @@ void Parser::getUnion(bool isTypedef)
 	bool isDef = data->token.peek(0).getString() == "{";
 	auto it = data->symbols[0].find(name);
 
-	if (!isDef)
+	auto reg = [&]()
 	{
-		if (it == data->symbols[0].end())
-		{
-			symbol t;
-			t.isDefined = false;
-			t.isVariable = false;
-			t.offSet = -1;
-			t.type = new UnionType;
-			data->symbols[0].insert(std::pair<std::string, symbol>(name, t));
-		}
-		else if (!it->second.type->isUnion())
-		{
-			addError(std::string("重定义，不同的类型"));
-		}
+		symbol t;
+		t.isDefined = false;
+		t.isVariable = false;
+		t.offSet = -1;
+		unidef.size = -1;
+		data->allUnionDef.push_back(unidef);
+		UnionRef tpr = std::make_unique<UnionType>();
+		tpr->name = name;
+		tpr->unionDef = &data->allUnionDef[data->allUnionDef.size() - 1];
+		data->allTypes.push_back(std::move(tpr));
+		t.type = tpr.get();
+		data->symbols[0].insert(std::pair<std::string, symbol>(name, t));
+	};
 
-		data->token.read();
-
-		return;
+	if (it == data->symbols[0].end())
+	{
+		reg();
+		if (!isDef)
+		{
+			data->token.read();
+			return;
+		}
+	}
+	else if (!it->second.type->isUnion())
+	{
+		addError(std::string("重定义，不同的类型"));
+	}
+	else if (it->second.isDefined)
+	{
+		addError(std::string("联合体重定义"));
 	}
 
-	/*获取联合体体定义*/
-	UnionDef unidef;
-	unidef.size = 0;
+	it = data->symbols[0].find(name);
+
+	/*获取结构体定义*/
 	requireToken("{");
 
 	while (true)
 	{
-		Types *type = peekType();
-		if (type->isConst)
+		variables vs = getVariables(false);
+
+		if (vs.type->isStatic || vs.type->isConst)
 		{
 			addError(std::string("无效的类型说明符"));
 		}
 
-		while (true)
+		for (int i = 0; i<vs.names.size(); ++i)
 		{
-			auto t = data->token.peek(0);
-
-			if (!t.isIdentifier() || t.isKeyWord())
+			for (int j = 0; j < unidef.members.size(); ++j)
 			{
-				addError(std::string("应输入正确的标识符"));
-			}
-
-			const std::string &s = data->token.peek(0).getString();
-			data->token.read();
-
-			for (int i = 0; i < unidef.members.size(); ++i)
-			{
-				if (unidef.members[i] == s)
+				if (unidef.members[j] == vs.names[i])
 				{
 					addError(std::string("成员重定义"));
 				}
 			}
 
-			unidef.members.push_back(s);
-			unidef.size = std::max(type->getSize(),unidef.size);
-			unidef.types.push_back(type);
+			unidef.members.push_back(vs.names[i]);
 
-			if (data->token.peek(0).isEos())
-			{
-				data->token.read();
-				break;
-			}
-			else if (data->token.peek(0).getString() == ",")
-			{
-				data->token.read();
-			}
-			else
-			{
-				addError(std::string("应输入,"));
-			}
+			unidef.size = std::max(vs.type->getSize(), unidef.size);
+			unidef.types.push_back(vs.type);
 		}
 
 		if (data->token.peek(0).getString() == "}")
@@ -483,38 +439,9 @@ void Parser::getUnion(bool isTypedef)
 
 	requireToken("}");
 
-	if (it == data->symbols[0].end())
-	{
-		symbol t;
-		t.isDefined = true;
-		t.isVariable = false;
-		t.offSet = -1;
-		data->allUnionDef.push_back(unidef);
-		UnionRef tpr = std::make_unique<UnionType>();
-		tpr->unionDef = &data->allUnionDef[data->allUnionDef.size() - 1];
-		data->allTypes.push_back(std::move(tpr));
-		t.type = tpr.get();
-		data->symbols[0].insert(std::pair<std::string, symbol>(name, t));
-	}
-	else if (!it->second.type->isUnion())
-	{
-		if (it->second.isDefined)
-		{
-			addError(std::string("联合体重定义"));
-		}
-		else
-		{
-			delete it->second.type;
-			it->second.isDefined = true;
-			data->allUnionDef.push_back(unidef);
-			UnionRef tpr = std::make_unique<UnionType>();
-			tpr->unionDef = &data->allUnionDef[data->allUnionDef.size() - 1];
-			data->allTypes.push_back(std::move(tpr));
-			it->second.type = tpr.get();
-		}
-	}
-
-
+	*it->second.type->toUnion()->unionDef = unidef;
+	it->second.isDefined = true;
+	//todo,全局变量的解析
 
 }
 
@@ -632,6 +559,11 @@ void Parser::createBaseType()
 	data->allTypes.push_back(std::move(double1));
 	data->allTypes.push_back(std::move(double2));
 
+}
+
+variables Parser::getVariables(bool ini)
+{
+	return variables();
 }
 
 symbol * Parser::findSymbol(const std::string & name)

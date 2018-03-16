@@ -7,6 +7,7 @@
 
 struct StructDef
 {
+	StructDef();
 	std::vector<std::string> members;
 	std::vector<int> offSets;
 	std::vector<Types *> types;
@@ -15,6 +16,7 @@ struct StructDef
 
 struct UnionDef
 {
+	UnionDef();
 	std::vector<std::string> members;
 	std::vector<Types *> types;
 	int size;

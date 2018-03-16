@@ -8,6 +8,8 @@ class EnumDef;
 #include <string>
 
 class StructType;
+class UnionType;
+class BasicType;
 
 class Types
 {
@@ -15,6 +17,8 @@ public:
 	Types();
 	~Types();
 	StructType *toStruct();
+	UnionType *toUnion();
+	BasicType *toBasic();
 	virtual bool isBasic();
 	virtual bool isPointer();
 	virtual bool isArray();
@@ -53,6 +57,7 @@ class UnionType :public Types
 public:
 	virtual bool isUnion()override;
 	virtual int getSize()override;
+	std::string name;
 	UnionDef *unionDef;
 };
 

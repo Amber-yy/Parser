@@ -17,6 +17,16 @@ StructType * Types::toStruct()
 	return dynamic_cast<StructType *>(this);
 }
 
+UnionType * Types::toUnion()
+{
+	return dynamic_cast<UnionType *>(this);
+}
+
+BasicType * Types::toBasic()
+{
+	return dynamic_cast<BasicType *>(this);
+}
+
 bool Types::isBasic()
 {
 	return false;
