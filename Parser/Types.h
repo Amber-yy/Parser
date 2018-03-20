@@ -10,6 +10,7 @@ class EnumDef;
 class StructType;
 class UnionType;
 class BasicType;
+class ArrayType;
 
 class Types
 {
@@ -19,6 +20,7 @@ public:
 	StructType *toStruct();
 	UnionType *toUnion();
 	BasicType *toBasic();
+	ArrayType *toArray();
 	virtual bool isBasic();
 	virtual bool isPointer();
 	virtual bool isArray();
@@ -76,7 +78,19 @@ public:
 	Types *targetType;
 };
 
+class ArrayType :public Types
+{
+public:
+	virtual bool isArray()override;
+	virtual int getSize()override;
+	int capacity;
+	Types *dataType;
+};
+
 using TypeRef = std::unique_ptr<Types>;
 using StructRef = std::unique_ptr<StructType>;
 using UnionRef = std::unique_ptr<UnionType>;
 using BasicRef = std::unique_ptr<BasicType>;
+using PointerRef = std::unique_ptr<PointerType>;
+using ArrayRef = std::unique_ptr<ArrayType>;
+using VoidRef = std::unique_ptr<VoidType>;

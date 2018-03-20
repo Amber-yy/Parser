@@ -27,6 +27,11 @@ BasicType * Types::toBasic()
 	return dynamic_cast<BasicType *>(this);
 }
 
+ArrayType * Types::toArray()
+{
+	return dynamic_cast<ArrayType *>(this);
+}
+
 bool Types::isBasic()
 {
 	return false;
@@ -122,4 +127,14 @@ bool PointerType::isPointer()
 int PointerType::getSize()
 {
 	return sizeof(void *);
+}
+
+bool ArrayType::isArray()
+{
+	return true;
+}
+
+int ArrayType::getSize()
+{
+	return capacity*dataType->getSize();
 }
