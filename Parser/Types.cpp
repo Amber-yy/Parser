@@ -138,3 +138,13 @@ int ArrayType::getSize()
 {
 	return capacity*dataType->getSize();
 }
+
+bool EnumType::isEnum()
+{
+	return true;
+}
+
+int EnumType::getSize()
+{
+	return sizeof(int);
+}

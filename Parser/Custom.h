@@ -26,5 +26,5 @@ struct UnionDef
 
 struct EnumDef
 {
-
+	std::string name;
 };

@@ -87,9 +87,23 @@ public:
 	Types *dataType;
 };
 
+class EnumType :public Types
+{
+public:
+	virtual bool isEnum()override;
+	virtual int getSize()override;
+	EnumDef *enumDef;
+};
+
+class FunctionType :public Types
+{
+
+};
+
 using TypeRef = std::unique_ptr<Types>;
 using StructRef = std::unique_ptr<StructType>;
 using UnionRef = std::unique_ptr<UnionType>;
+using EnumRef = std::unique_ptr<EnumType>;
 using BasicRef = std::unique_ptr<BasicType>;
 using PointerRef = std::unique_ptr<PointerType>;
 using ArrayRef = std::unique_ptr<ArrayType>;

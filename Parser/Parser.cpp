@@ -18,9 +18,9 @@ enum ParseType
 	VARIABLE,
 };
 
-struct variables
+struct variable
 {
-	std::vector<std::string> names;
+	std::string name;
 	Types * type;
 };
 
@@ -52,11 +52,28 @@ struct Value
 
 struct Region
 {
+	Region()
+	{
+		dataSize = 1024;
+		data = new char[dataSize];
+		currentOffset = 0;
+	}
 	void addValue(VariableValue &v)
 	{
+		if (v.type->getSize() + currentOffset > dataSize)
+		{
+			dataSize *= 2;
+			char *temp = new char[dataSize];
+			memcpy(temp, data, dataSize / 2);
+			delete data;
+			data = temp;
+		}
 
+		memcpy(data + currentOffset, v.buffer, v.type->getSize());
+		currentOffset += v.type->getSize();
 	}
 	char *data;
+	int dataSize;
 	int currentOffset;
 	std::map<std::string, Value> values;
 };
@@ -70,7 +87,9 @@ struct Parser::Data
 	std::vector<std::map<std::string, symbol>> symbols;
 	std::vector<StructDef> allStructDef;
 	std::vector<UnionDef> allUnionDef;
+	std::vector<EnumDef> allEnumDef;
 	std::vector<TypeRef> allTypes;
+	std::string vName;
 	std::list<Token *> line;
 	ParseType type;
 	int currentLevel;
@@ -102,11 +121,11 @@ void Parser::parse(const std::string &file)
 		}
 		else if (data->type == UNION)
 		{
-
+			getUnion();
 		}
 		else if (data->type == ENUM)
 		{
-
+			getEnum();
 		}
 		else if (data->type == VARIABLE)
 		{
@@ -330,24 +349,31 @@ void Parser::getStruct(bool isTypedef)
 			break;
 		}
 
-		variables vs = getVariables(false);
+		Types *tp = peekType();
 
-		if (vs.type->isStatic || vs.type->isConst)
+		if (tp->isStatic || tp->isConst)
 		{
 			addError(std::string("无效的类型说明符"));
 		}
 
-		for(int i=0;i<vs.names.size();++i)
+		std::vector<variable> vs;
+		while (true)
+		{
+			variable v = getVariables(tp);
+			vs.push_back(v);
+		}
+
+		for(int i=0;i<vs.size();++i)
 		{
 			for (int j = 0; j < strdef.members.size(); ++j)
 			{
-				if (strdef.members[j] == vs.names[i])
+				if (strdef.members[j] == vs[i].name)
 				{
 					addError(std::string("成员重定义"));
 				}
 			}
 
-			strdef.members.push_back(vs.names[i]);
+			strdef.members.push_back(vs[i].name);
 
 			if (strdef.offSets.empty())
 			{
@@ -355,11 +381,11 @@ void Parser::getStruct(bool isTypedef)
 			}
 			else
 			{
-				strdef.offSets.push_back(strdef.offSets[strdef.offSets.size() - 1] + vs.type->getSize());
+				strdef.offSets.push_back(strdef.offSets[strdef.offSets.size() - 1] + vs[i].type->getSize());
 			}
 
-			strdef.size += vs.type->getSize();
-			strdef.types.push_back(vs.type);
+			strdef.size += vs[i].type->getSize();
+			strdef.types.push_back(vs[i].type);
 		}
 	}
 
@@ -547,28 +573,36 @@ void Parser::getUnion(bool isTypedef)
 			break;
 		}
 
-		variables vs = getVariables(false);
+		Types *tp = peekType();
 
-		if (vs.type->isStatic || vs.type->isConst)
+		if (tp->isStatic || tp->isConst)
 		{
 			addError(std::string("无效的类型说明符"));
 		}
 
-		for (int i = 0; i<vs.names.size(); ++i)
+		std::vector<variable> vs;
+		while (true)
+		{
+			variable v = getVariables(tp);
+			vs.push_back(v);
+		}
+
+		for (int i = 0; i<vs.size(); ++i)
 		{
 			for (int j = 0; j < unidef.members.size(); ++j)
 			{
-				if (unidef.members[j] == vs.names[i])
+				if (unidef.members[j] == vs[i].name)
 				{
 					addError(std::string("成员重定义"));
 				}
 			}
 
-			unidef.members.push_back(vs.names[i]);
+			unidef.members.push_back(vs[i].name);
 
-			unidef.size = std::max(unidef.size,vs.type->getSize());
-			unidef.types.push_back(vs.type);
+			unidef.size = std::max(vs[i].type->getSize(),unidef.size);
+			unidef.types.push_back(vs[i].type);
 		}
+
 	}
 
 	requireToken("}");
@@ -620,6 +654,158 @@ void Parser::getUnion(bool isTypedef)
 	{
 		getUnionVariable(isStatic, isConst, type, constType);
 	}
+
+}
+
+void Parser::getEnum(bool isTypedef)
+{
+	bool isStatic = false;
+	bool isConst = false;
+	bool isAnonymous = false;
+	EnumDef enumDef;
+	std::string name;
+
+	while (true)
+	{
+		const std::string &str = data->token.peek(0).getString();
+		data->token.read();
+
+		if (str == "enum")
+		{
+			break;
+		}
+		if (str == "static")
+		{
+			if (isStatic == false)
+			{
+				isStatic = true;
+			}
+			else
+			{
+				addError(std::string("无效的类型组合说明符"));
+			}
+		}
+		else if (str == "const")
+		{
+			if (isConst == false)
+			{
+				isConst = true;
+			}
+			else
+			{
+				addError(std::string("无效的类型组合说明符"));
+			}
+		}
+	}
+
+	auto token = data->token.peek(0);
+
+	if (token.getString() == "{")
+	{
+		isAnonymous = true;
+	}
+	else if (token.isIdentifier() && !token.isKeyWord())
+	{
+		name = token.getString();
+		data->token.read();
+	}
+	else
+	{
+		addError(std::string("应输入标识符"));
+	}
+
+	enumDef.name = name;
+	data->allEnumDef.push_back(enumDef);
+
+	EnumRef type = std::make_unique<EnumType>();
+	EnumRef typec = std::make_unique<EnumType>();
+
+	type->enumDef = &data->allEnumDef[data->allEnumDef.size()-1];
+	typec->enumDef = type->enumDef;
+	typec->isConst = true;
+
+	if (!isAnonymous)
+	{
+		symbol t;
+		t.isDefined = true;
+		t.isVariable = false;
+		t.offSet = -1;
+		t.type = type.get();
+		t.constType = typec.get();
+
+		auto it=data->symbols[0].find(name);
+		if (it != data->symbols[0].end())
+		{
+			addError(std::string("重定义标识符"));
+		}
+
+		data->symbols[0].insert(std::pair<std::string, symbol>(name, t));
+	}
+
+	Types *tp = type.get();
+	Types *tpc = typec.get();
+
+	data->allTypes.push_back(std::move(type));
+	data->allTypes.push_back(std::move(typec));
+
+	requireToken("{");
+
+	int size = 0;
+	int lastValue = -1;
+
+	while (true)
+	{
+		if (data->token.peek(0).getString() == "}")
+		{
+			if (size == 0)
+			{
+				addError(std::string("应输入枚举类型"));
+			}
+			break;
+		}
+
+		auto token = data->token.read();
+		if (token.isIdentifier() && !token.isKeyWord())
+		{
+			const std::string &str = token.getString();
+			auto it = data->symbols[0].find(name);
+			if (it != data->symbols[0].end())
+			{
+				addError(std::string("重定义标识符"));
+			}
+
+			VariableValue v = getConstIni(data->allTypes[10].get());
+			if (!v.buffer)
+			{
+				v.buffer = new char[sizeof(int)];
+				*(int *)v.buffer = lastValue+1;
+			}
+			else
+			{
+				lastValue = *(int *)v.buffer;
+			}
+
+			symbol t;
+			t.isDefined = true;
+			t.isVariable = true;
+			t.type = tp;
+			t.offSet = data->globalRegion.currentOffset;
+			data->globalRegion.addValue(v);
+			data->symbols[0].insert(std::pair<std::string,symbol>(str,t));
+			v.release();
+		}
+		else
+		{
+			addError(std::string("应该输入正确的标识符"));
+		}
+	}
+
+	requireToken("}");
+
+
+
+
+
 
 }
 
@@ -797,20 +983,22 @@ void Parser::getStructVariable(bool isStatic, bool isConst, Types * type, Types 
 				}
 
 				Value val;
+				val.isDefined = true;
+				val.type = ptr.get();
 
 				if (isStatic)
 				{
-					val.isDefined = true;
-					val.offSet = data->staticRegion.currentOffset;
-					val.type = ptr.get();
-					data->staticRegion.values.insert(std::pair<std::string, Value>(vname, val));
+					//val.offSet = data->staticRegion.currentOffset;
+					//data->staticRegion.values.insert(std::pair<std::string, Value>(vname, val));
 					data->staticRegion.addValue(v);
 				}
 				else
 				{
-					val.isDefined = true;
 					val.offSet = data->globalRegion.currentOffset;
-					val.type = ptr.get();
+					if (data->globalRegion.values.find(vname) != data->globalRegion.values.end())
+					{
+						addError(std::string("重定义的全局变量"));
+					}
 					data->globalRegion.values.insert(std::pair<std::string, Value>(vname, val));
 					data->globalRegion.addValue(v);
 				}
@@ -873,20 +1061,22 @@ void Parser::getStructVariable(bool isStatic, bool isConst, Types * type, Types 
 			}
 
 			Value val;
+			val.isDefined = true;
+			val.type = tp;
 
 			if (isStatic)
 			{
-				val.isDefined = true;
-				val.offSet = data->staticRegion.currentOffset;
-				val.type = tp;
-				data->staticRegion.values.insert(std::pair<std::string, Value>(str, val));
+				//val.offSet = data->staticRegion.currentOffset;
+				//data->staticRegion.values.insert(std::pair<std::string, Value>(str, val));
 				data->staticRegion.addValue(v);
 			}
 			else
 			{
-				val.isDefined = true;
 				val.offSet = data->globalRegion.currentOffset;
-				val.type = tp;
+				if (data->globalRegion.values.find(str) != data->globalRegion.values.end())
+				{
+					addError(std::string("重定义的全局变量"));
+				}
 				data->globalRegion.values.insert(std::pair<std::string, Value>(str, val));
 				data->globalRegion.addValue(v);
 			}
@@ -1061,6 +1251,16 @@ void Parser::getUnionTypedef(bool isStatic, bool isConst, Types * type, Types * 
 	getStructTypedef(isStatic, isConst, type, constType, name);
 }
 
+void Parser::getEnumVariable(bool isStatic, bool isConst, Types * type, Types * constType)
+{
+	getStructVariable(isStatic, isConst, type, constType);
+}
+
+void Parser::getEnumTypedef(bool isStatic, bool isConst, Types * type, Types * constType, std::string & name)
+{
+	getStructTypedef(isStatic, isConst, type, constType, name);
+}
+
 VariableValue Parser::getConstIni(Types * type)
 {
 	return VariableValue();
@@ -1068,12 +1268,77 @@ VariableValue Parser::getConstIni(Types * type)
 
 int Parser::getArrayIndexConst()
 {
-	return 0;
+	return 5;
 }
 
-variables Parser::getVariables(bool ini)
+variable Parser::getVariables(Types *pre)
 {
-	return variables();
+	std::list<Token *> tokens;
+
+	int left = 0;
+	int right = 0;
+
+	while (true)
+	{
+		auto str = data->token.peek(0).getString();
+		if (str == ";")
+		{
+			break;
+		}
+		if (str == ",")
+		{
+			if (left == right)
+			{
+				break;
+			}
+		}
+		if (str == "=")
+		{
+			break;
+		}
+		if (str == "(")
+		{
+			++left;
+		}
+		if (str == ")")
+		{
+			++right;
+		}
+
+		tokens.push_back(&data->token.read());
+	}
+
+	data->vName = "";
+	auto type=parseType(pre, tokens);
+
+	variable t;
+	t.name = data->vName;
+	t.type = type;
+
+	return t;
+}
+
+Types * Parser::parseType(Types * pre, std::list<Token*>& tokens)
+{
+	if (tokens.empty())
+	{
+		return pre;
+	}
+
+	Token *nt = nullptr;
+
+	while (true)
+	{
+		
+
+
+
+
+
+
+
+	}
+
 }
 
 symbol * Parser::findSymbol(const std::string & name)
@@ -1110,6 +1375,7 @@ Types * Parser::peekType()
 			{
 				addError(std::string("无效的类型组合说明符"));
 			}
+			data->token.read();
 		}
 		else if (str == "const")
 		{
@@ -1121,6 +1387,7 @@ Types * Parser::peekType()
 			{
 				addError(std::string("无效的类型组合说明符"));
 			}
+			data->token.read();
 		}
 		else if (str == "void")
 		{
