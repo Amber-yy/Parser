@@ -32,6 +32,11 @@ ArrayType * Types::toArray()
 	return dynamic_cast<ArrayType *>(this);
 }
 
+VoidType * Types::toVoid()
+{
+	return dynamic_cast<VoidType *>(this);
+}
+
 bool Types::isBasic()
 {
 	return false;
@@ -79,6 +84,13 @@ BasicType::BasicType()
 	size=0;
 }
 
+std::unique_ptr<Types> BasicType::copy()
+{
+	BasicRef p = std::make_unique<BasicType>();
+	*p = *this;
+	return std::move(p);
+}
+
 bool BasicType::isBasic()
 {
 	return true;
@@ -87,6 +99,13 @@ bool BasicType::isBasic()
 int BasicType::getSize()
 {
 	return 4;
+}
+
+std::unique_ptr<Types> StructType::copy()
+{
+	StructRef p = std::make_unique<StructType>();
+	*p = *this;
+	return std::move(p);
 }
 
 bool StructType::isStruct()
@@ -99,6 +118,13 @@ int StructType::getSize()
 	return structDef->size;
 }
 
+std::unique_ptr<Types> UnionType::copy()
+{
+	UnionRef p = std::make_unique<UnionType>();
+	*p = *this;
+	return std::move(p);
+}
+
 bool UnionType::isUnion()
 {
 	return true;
@@ -107,6 +133,13 @@ bool UnionType::isUnion()
 int UnionType::getSize()
 {
 	return unionDef->size;
+}
+
+std::unique_ptr<Types> VoidType::copy()
+{
+	VoidRef p = std::make_unique<VoidType>();
+	*p = *this;
+	return std::move(p);
 }
 
 bool VoidType::isVoid()
@@ -119,6 +152,13 @@ int VoidType::getSize()
 	return 0;
 }
 
+std::unique_ptr<Types> PointerType::copy()
+{
+	PointerRef p = std::make_unique<PointerType>();
+	*p = *this;
+	return std::move(p);
+}
+
 bool PointerType::isPointer()
 {
 	return true;
@@ -127,6 +167,13 @@ bool PointerType::isPointer()
 int PointerType::getSize()
 {
 	return sizeof(void *);
+}
+
+std::unique_ptr<Types> ArrayType::copy()
+{
+	ArrayRef p = std::make_unique<ArrayType>();
+	*p = *this;
+	return std::move(p);
 }
 
 bool ArrayType::isArray()
@@ -139,6 +186,13 @@ int ArrayType::getSize()
 	return capacity*dataType->getSize();
 }
 
+std::unique_ptr<Types> EnumType::copy()
+{
+	EnumRef p = std::make_unique<EnumType>();
+	*p = *this;
+	return std::move(p);
+}
+
 bool EnumType::isEnum()
 {
 	return true;
@@ -147,4 +201,21 @@ bool EnumType::isEnum()
 int EnumType::getSize()
 {
 	return sizeof(int);
+}
+
+std::unique_ptr<Types> FunctionType::copy()
+{
+	FunctionRef p = std::make_unique<FunctionType>();
+	*p = *this;
+	return std::move(p);
+}
+
+bool FunctionType::isFunction()
+{
+	return true;
+}
+
+int FunctionType::getSize()
+{
+	return sizeof(void *);
 }

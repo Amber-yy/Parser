@@ -18,6 +18,12 @@ enum ParseType
 	VARIABLE,
 };
 
+struct TypeToken
+{
+	Token *token;
+	int index;
+};
+
 struct variable
 {
 	std::string name;
@@ -89,10 +95,12 @@ struct Parser::Data
 	std::vector<UnionDef> allUnionDef;
 	std::vector<EnumDef> allEnumDef;
 	std::vector<TypeRef> allTypes;
-	std::string vName;
 	std::list<Token *> line;
+	std::list<TypeToken> origin;
+	std::string vName;
 	ParseType type;
 	int currentLevel;
+	int index;
 };
 
 Parser::Parser()
@@ -1273,10 +1281,16 @@ int Parser::getArrayIndexConst()
 
 variable Parser::getVariables(Types *pre)
 {
-	std::list<Token *> tokens;
+	std::list<TypeToken> typeTokens;
 
 	int left = 0;
 	int right = 0;
+	int index = 0;
+
+	TypeToken tt;
+	tt.token = nullptr;
+	tt.index = -1;
+	typeTokens.push_back(tt);
 
 	while (true)
 	{
@@ -1305,11 +1319,21 @@ variable Parser::getVariables(Types *pre)
 			++right;
 		}
 
-		tokens.push_back(&data->token.read());
+		tt.token = &data->token.read();
+		tt.index = index;
+		++index;
+
+		typeTokens.push_back(tt);
 	}
 
 	data->vName = "";
-	auto type=parseType(pre, tokens);
+	data->origin = typeTokens;
+	auto type=parseType(pre, typeTokens,0);
+
+	if (data->vName == "")
+	{
+		addError(std::string("应输入变量名"));
+	}
 
 	variable t;
 	t.name = data->vName;
@@ -1318,27 +1342,288 @@ variable Parser::getVariables(Types *pre)
 	return t;
 }
 
-Types * Parser::parseType(Types * pre, std::list<Token*>& tokens)
+Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name)
 {
-	if (tokens.empty())
+	auto it = tokens.begin();
+	++it;
+
+	if (it == tokens.end())
 	{
 		return pre;
 	}
 
-	Token *nt = nullptr;
-
-	while (true)
+	auto clearBarack = [&tokens](auto i1,auto i2)->void
 	{
-		
+		while (true)//清理多余的括号
+		{
+			if (i1 == tokens.begin() || i2 == tokens.end())
+			{
+				break;
+			}
+			if (i1->token->getString() == "(" && i2->token->getString() == ")")
+			{
+				auto n1 = i1;
+				--n1;
+				auto n2 = i2;
+				++n2;
+
+				tokens.erase(i1);
+				tokens.erase(i2);
+				i1 = n1;
+				i2 = n2;
+			}
+			else
+			{
+				break;
+			}
+		}
+	};
+
+	bool isConst = false;
+	auto ic = tokens.end();
+
+	for(;it!=tokens.end();++it)
+	{
+		const std::string &str = it->token->getString();
+		if (str == "*")
+		{
+			auto in = it;
+			++in;
+
+			if (in == tokens.end() || in->token->getString() == ")")
+			{
+				if (name == 1)
+				{
+					int id = it->index;
+
+					auto n = data->origin.begin();
+					while (true)
+					{
+						if (n->index == id)
+						{
+							break;
+						}
+						++n;
+					}
+
+					++n;
+
+					while (n->token->getString() == "(")
+					{
+						++n;
+					}
+
+					if (n->index != data->index)
+					{
+						addError(std::string("标识符的位置不正确"));
+					}
+
+				}
+
+				if (isConst)//清除const
+				{
+					auto i1 = ic;
+					auto i2 = ic;
+					--i1;
+					++i2;
+					tokens.erase(ic);
+					clearBarack(i1, i2);
+				}
+
+				auto i1 = it;
+				auto i2 = it;
+				--i1;
+				++i2;
+
+				tokens.erase(it);
+				clearBarack(i1, i2);
+
+				PointerRef pt = std::make_unique<PointerType>();
+				pt->targetType = parseType(pre, tokens, 2);
+				pt->targetType->isConst = isConst;
+
+				auto result = pt.get();
+				data->allTypes.push_back(std::move(pt));
+
+				return result;
+			}
+
+			isConst = false;
+		}
+		else if (it->token->isIdentifier() && !it->token->isKeyWord())
+		{
+			if (name != 0)
+			{
+				addError(std::string("不应有标识符"));
+			}
+
+			data->vName = str;
+			data->index = it->index;
+
+			if (isConst)//清除const
+			{
+				auto i1 = ic;
+				auto i2 = ic;
+				--i1;
+				++i2;
+				tokens.erase(ic);
+				clearBarack(i1, i2);
+			}
+
+			auto i1 = it;
+			auto i2 = it;
+
+			--i1; ++i2;
+			tokens.erase(it);
+			clearBarack(i1, i2);
+
+			auto p = parseType(pre,tokens,1);
+			p->isConst = isConst;
+
+			return p;
+		}
+		else if (it->token->getString() == "const")
+		{
+			isConst = true;
+			ic = it;
+		}
+		else if (str == "(")
+		{
+			auto in = it;
+			++in;
+			auto instr = in->token->getString();
+			if (instr == ")" || (in->token->isIdentifier() && !in->token->isKeyWord()))
+			{
+				if (name == 1)
+				{
+					int id = it->index;
+
+					auto n = data->origin.begin();
+					while (true)
+					{
+						if (n->index == id)
+						{
+							break;
+						}
+						++n;
+					}
+
+					--n;
+
+					while (n->token->getString() == ")")
+					{
+						--n;
+					}
+
+					if (n->index != data->index)
+					{
+						addError(std::string("标识符的位置不正确"));
+					}
+
+				}
+
+				FunctionRef f = std::make_unique<FunctionType>();
+				//假装读取参数
+
+				f->returnType = parseType(pre,tokens,2);
+				if (f->returnType->isFunction() || f->returnType->isArray())
+				{
+					addError(std::string("返回值类型无效"));
+				}
+
+				if (isConst)
+				{
+					addError(std::string("此处不应有const"));
+				}
+
+				auto i1 = in;
+				auto i2 = in;
+				--i1;
+				clearBarack(i1, i2);
+
+				auto result = f.get();
+				data->allTypes.push_back(std::move(f));
+
+				return result;
+			}
+
+		}
+		else if (str == "[")
+		{
+			if (isConst)
+			{
+				addError(std::string("此处不应有const"));
+			}
+
+			if (name == 1)
+			{
+				int id = it->index;
+
+				auto n = data->origin.begin();
+				while (true)
+				{
+					if (n->index == id)
+					{
+						break;
+					}
+					++n;
+				}
+
+				--n;
+
+				while (n->token->getString() == ")")
+				{
+					--n;
+				}
+
+				if (n->index != data->index)
+				{
+					addError(std::string("标识符的位置不正确"));
+				}
+
+			}
+
+			++it;
 
 
+			ArrayRef arr = std::make_unique<ArrayType>();
+			arr->capacity=10;			//读取数组大小
 
+			if (it->token->getString() != "]")
+			{
+				addError(std::string("缺少]"));
+			}
 
+			auto i1 = it;
+			auto i2 = it;
+			--i1;
+			++it;
+			tokens.erase(i1);
+			tokens.erase(i2);
+			i1 = it;
+			i2 = it;
+			clearBarack(i1, i2);
 
+			arr->dataType = parseType(pre, tokens, 2);
+			auto result = arr.get();
+			data->allTypes.push_back(std::move(arr));
 
+			return result;
+		}
+		else if (str == ")")
+		{
+			continue;
+		}
+		else
+		{
+			addError(std::string("错误的类型声明"));
+		}
 
 	}
 
+	addError(std::string("无效的类型组合"));
+
+	return nullptr;
 }
 
 symbol * Parser::findSymbol(const std::string & name)
@@ -1392,7 +1677,10 @@ Types * Parser::peekType()
 		else if (str == "void")
 		{
 			data->token.read();
-			return data->allTypes[22].get();
+			auto p = data->allTypes[22]->copy();
+			p->isStatic = isStatic;
+			data->allTypes.push_back(std::move(p));
+			return p.get();
 		}
 		else if (str == "struct"||str=="union"||str=="enum")
 		{
@@ -1437,10 +1725,12 @@ Types * Parser::peekType()
 					addError(std::string("无效的类型") + name);
 				}
 
-				data->token.read();
-				auto pt= isConst ? syb->constType : syb->type;
-				pt->isStatic = isStatic;
-				return pt;
+				auto pt = isConst ? syb->constType : syb->type;
+				auto p = pt->copy();
+				p->isStatic = isStatic;
+				p->isConst = isConst;
+				data->allTypes.push_back(std::move(p));
+				return p.get();
 			}
 			else
 			{
@@ -1460,8 +1750,11 @@ Types * Parser::peekType()
 			data->token.read();
 			
 			auto pt = isConst ? syb->constType : syb->type;
-			pt->isStatic = isStatic;
-			return pt;
+			auto p = pt->copy();
+			p->isStatic = isStatic;
+			p->isConst = isConst;
+			data->allTypes.push_back(std::move(p));
+			return p.get();
 		}
 		else if(data->token.peek(0).isKeyWord())
 		{
@@ -1481,9 +1774,11 @@ Types * Parser::peekType()
 		++result;
 	}
 
-	data->allTypes[result]->isStatic = isStatic;
+	auto p=data->allTypes[result]->copy();
+	p->isStatic = isStatic;
+	data->allTypes.push_back(std::move(p));
 
-	return data->allTypes[result].get();
+	return p.get();
 }
 
 int Parser::getBasicType(std::vector<std::string>& basic)

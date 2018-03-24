@@ -2,11 +2,13 @@
 
 #include <string>
 #include <vector>
+#include <list>
 
 class Types;
 struct symbol;
 struct variable;
 struct VariableValue;
+struct TypeToken;
 
 class Parser
 {
@@ -27,7 +29,7 @@ public:
 	void getUnionTypedef(bool isStatic, bool isConst, Types *type, Types *constType, std::string &name);
 	void getEnumVariable(bool isStatic, bool isConst, Types *type, Types *constType);
 	void getEnumTypedef(bool isStatic, bool isConst, Types *type, Types *constType, std::string &name);
-	Types *parseType(Types *pre,std::list<Token *> &tokens);
+	Types *parseType(Types *pre,std::list<TypeToken> &tokens,int name);//0表示需要变量名，1表示刚刚有名字，2表示不能有
 	VariableValue getConstIni(Types *type);
 	int getArrayIndexConst();
 	variable getVariables(Types *pre);
