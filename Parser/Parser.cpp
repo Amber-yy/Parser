@@ -368,6 +368,10 @@ void Parser::getStruct(bool isTypedef)
 		while (true)
 		{
 			variable v = getVariables(tp);
+			if (v.type->isFunction())
+			{
+				addError(std::string("不能有成员函数"));
+			}
 			vs.push_back(v);
 		}
 
@@ -435,7 +439,6 @@ void Parser::getStruct(bool isTypedef)
 		data->allTypes.push_back(std::move(tpr));//类型
 		data->allTypes.push_back(std::move(tprc));//常类型
 	}
-
 
 	//全局变量的解析
 	if (isTypedef)
@@ -1038,11 +1041,21 @@ void Parser::getStructVariable(bool isStatic, bool isConst, Types * type, Types 
 			Types *tp;
 			bool isArray = false;
 			ArrayRef array;
+			int index;
 
 			if (data->token.peek(0).getString() == "[")
 			{
 				data->token.read();
-				int index = getArrayIndexConst();
+				auto indexToken = data->token.read();
+				if (indexToken.isIntLiteral())
+				{
+					index = (int)indexToken.getInteger();
+				}
+				else
+				{
+					addError(std::string("应该输入数组大小"));
+				}
+
 				if (index <= 0)
 				{
 					addError(std::string("数组大小必须大于0"));
@@ -1197,7 +1210,16 @@ void Parser::getStructTypedef(bool isStatic, bool isConst, Types * type, Types *
 			if (data->token.peek(0).getString() == "[")
 			{
 				data->token.read();
-				index = getArrayIndexConst();
+				auto indexToken = data->token.read();
+				if (indexToken.isIntLiteral())
+				{
+					index = (int)indexToken.getInteger();
+				}
+				else
+				{
+					addError(std::string("应该输入数组大小"));
+				}
+
 				if (index <= 0)
 				{
 					addError(std::string("数组大小必须大于0"));
@@ -1274,11 +1296,6 @@ VariableValue Parser::getConstIni(Types * type)
 	return VariableValue();
 }
 
-int Parser::getArrayIndexConst()
-{
-	return 5;
-}
-
 variable Parser::getVariables(Types *pre)
 {
 	std::list<TypeToken> typeTokens;
@@ -1335,6 +1352,11 @@ variable Parser::getVariables(Types *pre)
 		addError(std::string("应输入变量名"));
 	}
 
+	if (type->isVoid())
+	{
+		addError(std::string("应输入正确的类型"));
+	}
+
 	variable t;
 	t.name = data->vName;
 	t.type = type;
@@ -1352,7 +1374,7 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name)
 		return pre;
 	}
 
-	auto clearBarack = [&tokens](auto i1,auto i2)->void
+	auto clearBarack = [&tokens](auto &i1,auto &i2)->void
 	{
 		while (true)//清理多余的括号
 		{
@@ -1379,6 +1401,15 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name)
 		}
 	};
 
+	auto addIt = [this, &tokens](auto &it)
+	{
+		if (it == tokens.end())
+		{
+			addError(std::string("代码不完整，缺少必要的token"));
+		}
+		++it;
+	};
+
 	bool isConst = false;
 	auto ic = tokens.end();
 
@@ -1388,7 +1419,7 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name)
 		if (str == "*")
 		{
 			auto in = it;
-			++in;
+			addIt(in);
 
 			if (in == tokens.end() || in->token->getString() == ")")
 			{
@@ -1425,7 +1456,7 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name)
 					auto i1 = ic;
 					auto i2 = ic;
 					--i1;
-					++i2;
+					addIt(i2);
 					tokens.erase(ic);
 					clearBarack(i1, i2);
 				}
@@ -1433,7 +1464,7 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name)
 				auto i1 = it;
 				auto i2 = it;
 				--i1;
-				++i2;
+				addIt(i2);
 
 				tokens.erase(it);
 				clearBarack(i1, i2);
@@ -1465,7 +1496,7 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name)
 				auto i1 = ic;
 				auto i2 = ic;
 				--i1;
-				++i2;
+				addIt(i2);
 				tokens.erase(ic);
 				clearBarack(i1, i2);
 			}
@@ -1473,7 +1504,8 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name)
 			auto i1 = it;
 			auto i2 = it;
 
-			--i1; ++i2;
+			--i1; 	
+			addIt(i2);
 			tokens.erase(it);
 			clearBarack(i1, i2);
 
@@ -1490,7 +1522,7 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name)
 		else if (str == "(")
 		{
 			auto in = it;
-			++in;
+			addIt(in);
 			auto instr = in->token->getString();
 			if (instr == ")" || (in->token->isIdentifier() && !in->token->isKeyWord()))
 			{
@@ -1587,7 +1619,21 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name)
 
 
 			ArrayRef arr = std::make_unique<ArrayType>();
-			arr->capacity=10;			//读取数组大小
+			if (it->token->isIntLiteral())
+			{
+				arr->capacity = (int)it->token->getInteger();			//读取数组大小
+				if (arr->capacity <= 0)
+				{
+					addError(std::string("数组大小必须大于0"));
+				}
+				auto ci = it;
+				addIt(it);
+				tokens.erase(ci);
+			}
+			else
+			{
+				addError(std::string("应该输入数组大小"));
+			}
 
 			if (it->token->getString() != "]")
 			{
@@ -1597,7 +1643,7 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name)
 			auto i1 = it;
 			auto i2 = it;
 			--i1;
-			++it;
+			addIt(it);
 			tokens.erase(i1);
 			tokens.erase(i2);
 			i1 = it;

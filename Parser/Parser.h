@@ -31,7 +31,6 @@ public:
 	void getEnumTypedef(bool isStatic, bool isConst, Types *type, Types *constType, std::string &name);
 	Types *parseType(Types *pre,std::list<TypeToken> &tokens,int name);//0表示需要变量名，1表示刚刚有名字，2表示不能有
 	VariableValue getConstIni(Types *type);
-	int getArrayIndexConst();
 	variable getVariables(Types *pre);
 	symbol *findSymbol(const std::string &name);
 	Types *peekType();
