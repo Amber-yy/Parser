@@ -20,6 +20,7 @@ public:
 	void getStruct(bool isTypedef=false);
 	void getUnion(bool isTypedef = false);
 	void getEnum(bool isTypedef = false);
+	void parseTypedef();
 	void addError(std::string &info);
 	void requireToken(const std::string &token);
 	void createBaseType();
@@ -29,11 +30,11 @@ public:
 	void getUnionTypedef(bool isStatic, bool isConst, Types *type, Types *constType, std::string &name);
 	void getEnumVariable(bool isStatic, bool isConst, Types *type, Types *constType);
 	void getEnumTypedef(bool isStatic, bool isConst, Types *type, Types *constType, std::string &name);
-	Types *parseType(Types *pre,std::list<TypeToken> &tokens,int name);//0表示需要变量名，1表示刚刚有名字，2表示不能有
+	Types *parseType(Types *pre,std::list<TypeToken> &tokens,int name,int level);//0表示需要变量名，1表示刚刚有名字，2表示不能有
 	VariableValue getConstIni(Types *type);
 	variable getVariables(Types *pre);
 	symbol *findSymbol(const std::string &name);
-	Types *peekType();
+	Types *peekType(bool args=false);
 	int getBasicType(std::vector<std::string> &basic);
 protected:
 	struct Data;

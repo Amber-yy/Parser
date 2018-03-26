@@ -6,6 +6,7 @@ struct EnumDef;
 
 #include <memory>
 #include <string>
+#include <vector>
 
 class StructType;
 class UnionType;
@@ -112,6 +113,8 @@ public:
 	virtual bool isFunction()override;
 	virtual int getSize()override;
 	Types *returnType;
+	std::vector<std::string> args;
+	std::vector<Types *> argsType;
 };
 
 using TypeRef = std::unique_ptr<Types>;
