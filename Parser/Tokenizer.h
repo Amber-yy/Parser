@@ -9,6 +9,7 @@ public:
 	Tokenizer();
 	~Tokenizer();
 	void parse(std::string &code);
+	void unRead();
 	bool hasMore(int index = 0);
 	Token &read();
 	Token &peek(int index);

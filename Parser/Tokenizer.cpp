@@ -113,6 +113,14 @@ void Tokenizer::parse(std::string & code)
 	}
 }
 
+void Tokenizer::unRead()
+{
+	if (data->currentIndex > 0)
+	{
+		--data->currentIndex;
+	}
+}
+
 void Tokenizer::getEndOfState()
 {
 	getChar();
@@ -949,11 +957,11 @@ void Tokenizer::unGetChar()
 
 Token & Tokenizer::read()
 {
-	++data->currentIndex;
 	if (data->currentIndex >= data->allToken.size())
 	{
 		addError(std::string("代码不完整，缺少必要的Token"));
 	}
+	++data->currentIndex;
 	return data->allToken[data->currentIndex - 1];
 }
 

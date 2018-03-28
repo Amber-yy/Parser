@@ -67,7 +67,7 @@ void Token::setLine(int line)
 
 void Token::setString(std::string & str)
 {
-	data->origin = std::move(str);
+	data->origin = str;
 }
 
 void Token::setReal(double n)
@@ -163,6 +163,11 @@ bool Token::isLiteral() const
 bool Token::isBinary() const
 {
 	return isOperator()&&((Divi <=data->opType&&data->opType<=Or)||(Assign <= data->opType&&data->opType <= Comma));
+}
+
+int Token::getLine() const
+{
+	return data->line;
 }
 
 OperatorType Token::getOperator() const

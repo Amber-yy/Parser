@@ -4,6 +4,7 @@
 #include "Types.h"
 #include "Custom.h"
 
+#include <iostream>
 #include <memory>
 #include <list>
 #include <map>
@@ -112,6 +113,8 @@ Parser::Parser()
 {
 	data = new Data;
 	createBaseType();
+	data->allUnionDef.reserve(1000);
+	data->allStructDef.reserve(1000);
 }
 
 Parser::~Parser()
@@ -124,6 +127,7 @@ void Parser::parse(const std::string &file)
 	std::string code=data->pre.doFile(file);
 	data->token.parse(code);
 	data->currentLevel = 0;
+	data->symbols.resize(2);
 
 	while (data->token.hasMore())
 	{
@@ -151,8 +155,8 @@ void Parser::parse(const std::string &file)
 
 	}
 
-
-
+	int a;
+	a = 10;
 }
 
 void Parser::getLine()
@@ -165,7 +169,7 @@ void Parser::getLine()
 		const std::string &str = data->token.peek(i).getString();
 		if (str == "{" || str == ";")
 		{
-			data->line.push_back(&data->token.peek(i));
+			//data->line.push_back(&data->token.peek(i));
 			break;
 		}
 
@@ -184,6 +188,12 @@ void Parser::getLine()
 	auto getType = [this,&it](ParseType tp)
 	{
 		++it;
+		if (it == data->line.end())
+		{
+			data->type = tp;
+			return;
+		}
+
 		if ((*it)->getString() == ";")
 		{
 			addError(std::string("应输入标识符"));
@@ -282,7 +292,7 @@ void Parser::getStruct(bool isTypedef)
 	}
 
 	std::string name;
-	const Token &t = data->token.read();
+	const Token &t = data->token.peek(0);
 
 	if (t.getString() == "{")//是匿名定义
 	{
@@ -296,6 +306,7 @@ void Parser::getStruct(bool isTypedef)
 	else//是一个合法的标识符，是否是定义取决于下一个字符是否是{
 	{
 		name = t.getString();
+		data->token.read();
 		isDef = data->token.peek(0).getString() == "{";
 	}
 
@@ -307,7 +318,7 @@ void Parser::getStruct(bool isTypedef)
 		t.isDefined = false;
 		t.isVariable = false;
 		t.offSet = -1;
-		strdef.size = -1;
+		strdef.size = 0;
 		strdef.name = name;
 		data->allStructDef.push_back(strdef);
 
@@ -376,6 +387,16 @@ void Parser::getStruct(bool isTypedef)
 		std::vector<variable> vs;
 		while (true)
 		{
+			if (data->token.peek(0).isEos())
+			{
+				if (vs.empty())
+				{
+					addError(std::string("应该输入成员变量"));
+				}
+				data->token.read();
+				break;
+			}
+
 			variable v = getVariables(tp);
 			if (v.type->isFunction())
 			{
@@ -535,7 +556,7 @@ void Parser::getUnion(bool isTypedef)
 		t.isDefined = false;
 		t.isVariable = false;
 		t.offSet = -1;
-		unidef.size = -1;
+		unidef.size = 0;
 		unidef.name = name;
 		data->allUnionDef.push_back(unidef);
 
@@ -604,7 +625,21 @@ void Parser::getUnion(bool isTypedef)
 		std::vector<variable> vs;
 		while (true)
 		{
+			if (data->token.peek(0).isEos())
+			{
+				if (vs.empty())
+				{
+					addError(std::string("应该输入成员变量"));
+				}
+				data->token.read();
+				break;
+			}
+
 			variable v = getVariables(tp);
+			if (v.type->isFunction())
+			{
+				addError(std::string("不能有成员函数"));
+			}
 			vs.push_back(v);
 		}
 
@@ -720,7 +755,7 @@ void Parser::getEnum(bool isTypedef)
 		}
 	}
 
-	auto token = data->token.peek(0);
+	auto &token = data->token.peek(0);
 
 	if (token.getString() == "{")
 	{
@@ -790,7 +825,7 @@ void Parser::getEnum(bool isTypedef)
 		if (token.isIdentifier() && !token.isKeyWord())
 		{
 			const std::string &str = token.getString();
-			auto it = data->symbols[0].find(name);
+			auto it = data->symbols[0].find(str);
 			if (it != data->symbols[0].end())
 			{
 				addError(std::string("重定义标识符"));
@@ -820,6 +855,18 @@ void Parser::getEnum(bool isTypedef)
 		{
 			addError(std::string("应该输入正确的标识符"));
 		}
+
+		auto &str = data->token.peek(0).getString();
+
+		if (str =="," )
+		{
+			data->token.read();
+		}
+		else
+		{
+			break;
+		}
+
 	}
 
 	requireToken("}");
@@ -878,12 +925,11 @@ void Parser::parseTypedef()
 
 	}
 
-
 }
 
 void Parser::addError(std::string & info)
 {
-	throw info;
+	throw std::to_string(data->token.peek(0).getLine()) +info;
 }
 
 void Parser::requireToken(const std::string & token)
@@ -1005,7 +1051,7 @@ void Parser::getStructVariable(bool isStatic, bool isConst, Types * type, Types 
 {
 	while (true)
 	{
-		auto &token = data->token.read();
+		auto &token = data->token.peek(0);
 		const std::string &str = token.getString();
 
 		if (str == ";")
@@ -1013,10 +1059,13 @@ void Parser::getStructVariable(bool isStatic, bool isConst, Types * type, Types 
 			return;
 		}
 
+		data->token.read();
+
 		if (str == "*")
 		{
 			auto &t = data->token.read();
-			if (token.isIdentifier() && !token.isKeyWord())
+
+			if (t.isIdentifier() && !t.isKeyWord())
 			{
 				std::string vname = t.getString();
 				auto it1 = data->symbols[0].find(vname);
@@ -1369,7 +1418,9 @@ void Parser::getEnumTypedef(bool isStatic, bool isConst, Types * type, Types * c
 
 VariableValue Parser::getConstIni(Types * type)
 {
-	return VariableValue();
+	VariableValue t;
+	t.type = type;
+	return t;
 }
 
 variable Parser::getVariables(Types *pre)
@@ -1396,6 +1447,7 @@ variable Parser::getVariables(Types *pre)
 		}
 		else if (str == ",")
 		{
+			data->token.read();
 			if (left == right)
 			{
 				break;
@@ -1992,6 +2044,15 @@ Types * Parser::peekType(bool args)
 
 			if (!syb)
 			{
+				if (basic.empty())
+				{
+					addError(std::string("未定义的标识符"));
+				}
+
+				if (!args)
+				{
+					data->token.unRead();
+				}
 				break;
 			}
 
@@ -2004,8 +2065,9 @@ Types * Parser::peekType(bool args)
 			auto p = pt->copy();
 			p->isStatic = isStatic;
 			p->isConst = isConst;
+			auto np = p.get();
 			data->allTypes.push_back(std::move(p));
-			return p.get();
+			return np;
 		}
 		else if(ct->isKeyWord())
 		{
@@ -2017,6 +2079,11 @@ Types * Parser::peekType(bool args)
 		}
 	}
 
+	if (basic.empty())
+	{
+		addError(std::string("应输入类型说明符"));
+	}
+
 	int result = getBasicType(basic);
 
 	if (isConst)
@@ -2026,9 +2093,10 @@ Types * Parser::peekType(bool args)
 
 	auto p=data->allTypes[result]->copy();
 	p->isStatic = isStatic;
+	auto pt = p.get();
 	data->allTypes.push_back(std::move(p));
 
-	return p.get();
+	return pt;
 }
 
 int Parser::getBasicType(std::vector<std::string>& basic)

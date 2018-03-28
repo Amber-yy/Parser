@@ -104,7 +104,10 @@ int BasicType::getSize()
 std::unique_ptr<Types> StructType::copy()
 {
 	StructRef p = std::make_unique<StructType>();
-	*p = *this;
+	p->isConst = isConst;
+	p->isStatic = isStatic;
+	p->name = name;
+	p->structDef = structDef;
 	return std::move(p);
 }
 
@@ -121,7 +124,10 @@ int StructType::getSize()
 std::unique_ptr<Types> UnionType::copy()
 {
 	UnionRef p = std::make_unique<UnionType>();
-	*p = *this;
+	p->isConst = isConst;
+	p->isStatic = isStatic;
+	p->name = name;
+	p->unionDef = unionDef;
 	return std::move(p);
 }
 

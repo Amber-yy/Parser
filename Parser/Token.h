@@ -150,6 +150,7 @@ public:
 	bool isValue()const;
 	bool isLiteral()const;
 	bool isBinary()const;
+	int getLine()const;
 	OperatorType getOperator() const;
 	unsigned long long getInteger()const;
 	const std::string &getString()const;
