@@ -13,10 +13,12 @@ class UnionType;
 class BasicType;
 class ArrayType;
 class VoidType;
+class Parser;
 
 class Types
 {
 public:
+	static Parser *parser;
 	Types();
 	~Types();
 	StructType *toStruct();

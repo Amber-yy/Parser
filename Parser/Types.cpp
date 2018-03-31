@@ -1,6 +1,8 @@
 #include "Types.h"
 #include "Custom.h"
 
+Parser * Types::parser;
+
 Types::Types()
 {
 	isConst=false;

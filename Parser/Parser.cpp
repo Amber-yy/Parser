@@ -76,7 +76,7 @@ struct Region
 			dataSize *= 2;
 			char *temp = new char[dataSize];
 			memcpy(temp, data, dataSize / 2);
-			delete data;
+			delete[] data;
 			data = temp;
 		}
 
@@ -113,8 +113,6 @@ Parser::Parser()
 {
 	data = new Data;
 	createBaseType();
-	data->allUnionDef.reserve(1000);
-	data->allStructDef.reserve(1000);
 }
 
 Parser::~Parser()
@@ -922,8 +920,29 @@ void Parser::parseTypedef()
 			}
 			break;
 		}
-
 	}
+
+	if (isStruct)
+	{
+		getStruct(true);
+		return;
+	}
+
+	if (isUnion)
+	{
+		getUnion(true);
+		return;
+	}
+
+	if (isEnum)
+	{
+		getEnum(true);
+		return;
+	}
+
+
+
+
 
 }
 
@@ -1259,7 +1278,7 @@ void Parser::getStructTypedef(bool isStatic, bool isConst, Types * type, Types *
 
 	while (true)
 	{
-		auto &token = data->token.read();
+		auto &token = data->token.peek(0);
 		const std::string &str = token.getString();
 
 		if (str == ";")
@@ -1267,10 +1286,12 @@ void Parser::getStructTypedef(bool isStatic, bool isConst, Types * type, Types *
 			return;
 		}
 
+		data->token.read();
+
 		if (str == "*")
 		{
 			auto &t = data->token.read();
-			if (token.isIdentifier() && !token.isKeyWord())
+			if (t.isIdentifier() && !t.isKeyWord())
 			{
 				std::string vname = t.getString();
 				auto it1 = data->symbols[0].find(vname);
@@ -1447,11 +1468,11 @@ variable Parser::getVariables(Types *pre)
 		}
 		else if (str == ",")
 		{
-			data->token.read();
 			if (left == right)
 			{
+				data->token.read();
 				break;
-			}
+			} 
 		}
 		else if (str == "=")
 		{
@@ -1711,6 +1732,8 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name,int
 						tt.index = -1;
 						int left = 0;
 						int right = 0;
+						bool out = false;
+
 						while (true)//读取一个参数
 						{
 							auto str = in->token->getString();
@@ -1736,6 +1759,7 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name,int
 							{
 								if (left == right)
 								{
+									out = true;
 									break;
 								}
 								++right;
@@ -1791,7 +1815,7 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name,int
 						f->args.push_back(t.name);
 						f->argsType.push_back(t.type);
 
-						if (str == ")")
+						if (out)
 						{
 							break;
 						}
@@ -1933,6 +1957,20 @@ Types * Parser::peekType(bool args)
 	bool isConst = false;
 
 	std::vector<std::string> basic;
+	auto it = data->argTokens.begin();
+
+	auto clear = [&it,args,this]()
+	{
+		if (args)
+		{
+			for (auto i = data->argTokens.begin(); i != it;)
+			{
+				auto n = i;
+				++i;
+				data->argTokens.erase(n);
+			}
+		}
+	};
 
 	while (true)
 	{
@@ -1943,12 +1981,12 @@ Types * Parser::peekType(bool args)
 		}
 		else
 		{
-			if (data->argTokens.empty())
+			if (it == data->argTokens.end())
 			{
-				addError(std::string("应输入完整的类型说明符"));
+				break;
 			}
-			ct = data->argTokens.begin()->token;
-			data->argTokens.pop_front();
+			ct = it->token;
+			++it;
 		}
 
 		const std::string &str =ct->getString();
@@ -1978,8 +2016,10 @@ Types * Parser::peekType(bool args)
 		{
 			auto p = data->allTypes[22]->copy();
 			p->isStatic = isStatic;
+			auto np = p.get();
 			data->allTypes.push_back(std::move(p));
-			return p.get();
+			clear();
+			return np;
 		}
 		else if (str == "struct"||str=="union"||str=="enum")
 		{
@@ -2029,8 +2069,10 @@ Types * Parser::peekType(bool args)
 				auto p = pt->copy();
 				p->isStatic = isStatic;
 				p->isConst = isConst;
+				auto np = p.get();
 				data->allTypes.push_back(std::move(p));
-				return p.get();
+				clear();
+				return np;
 			}
 			else
 			{
@@ -2053,6 +2095,10 @@ Types * Parser::peekType(bool args)
 				{
 					data->token.unRead();
 				}
+				else
+				{
+					--it;
+				}
 				break;
 			}
 
@@ -2067,6 +2113,7 @@ Types * Parser::peekType(bool args)
 			p->isConst = isConst;
 			auto np = p.get();
 			data->allTypes.push_back(std::move(p));
+			clear();
 			return np;
 		}
 		else if(ct->isKeyWord())
@@ -2075,6 +2122,7 @@ Types * Parser::peekType(bool args)
 		}
 		else
 		{
+			data->token.unRead();
 			break;
 		}
 	}
@@ -2090,6 +2138,8 @@ Types * Parser::peekType(bool args)
 	{
 		++result;
 	}
+
+	clear();
 
 	auto p=data->allTypes[result]->copy();
 	p->isStatic = isStatic;
