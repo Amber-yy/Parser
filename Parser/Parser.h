@@ -9,6 +9,9 @@ struct symbol;
 struct variable;
 struct VariableValue;
 struct TypeToken;
+struct StructDef;
+struct UnionDef;
+struct EnumDef;
 
 class Parser
 {
@@ -30,6 +33,9 @@ public:
 	void getUnionTypedef(bool isStatic, bool isConst, Types *type, Types *constType, std::string &name);
 	void getEnumVariable(bool isStatic, bool isConst, Types *type, Types *constType);
 	void getEnumTypedef(bool isStatic, bool isConst, Types *type, Types *constType, std::string &name);
+	StructDef *getStructDef(int index);
+	UnionDef *getUnionDef(int index);
+	EnumDef *getEnumDef(int index);
 	Types *parseType(Types *pre,std::list<TypeToken> &tokens,int name,int level);//0表示需要变量名，1表示刚刚有名字，2表示不能有
 	VariableValue getConstIni(Types *type);
 	variable getVariables(Types *pre);

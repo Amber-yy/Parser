@@ -59,7 +59,7 @@ public:
 	virtual bool isStruct()override;
 	virtual int getSize()override;
 	std::string name;
-	StructDef *structDef;
+	int structDef;
 };
 
 class UnionType :public Types
@@ -69,7 +69,7 @@ public:
 	virtual bool isUnion()override;
 	virtual int getSize()override;
 	std::string name;
-	UnionDef *unionDef;
+	int unionDef;
 };
 
 class VoidType :public Types
@@ -105,7 +105,7 @@ public:
 	virtual std::unique_ptr<Types> copy()override;
 	virtual bool isEnum()override;
 	virtual int getSize()override;
-	EnumDef *enumDef;
+	int enumDef;
 };
 
 class FunctionType :public Types

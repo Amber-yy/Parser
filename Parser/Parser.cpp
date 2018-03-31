@@ -112,6 +112,7 @@ struct Parser::Data
 Parser::Parser()
 {
 	data = new Data;
+	Types::parser = this;
 	createBaseType();
 }
 
@@ -322,7 +323,7 @@ void Parser::getStruct(bool isTypedef)
 
 		StructRef tpr = std::make_unique<StructType>();
 		tpr->name = name;
-		tpr->structDef = &data->allStructDef[data->allStructDef.size() - 1];
+		tpr->structDef = data->allStructDef.size() - 1;
 
 		StructRef tprc = std::make_unique<StructType>();
 		tprc->name = name;
@@ -454,7 +455,7 @@ void Parser::getStruct(bool isTypedef)
 		data->allStructDef.push_back(strdef);
 		StructRef tpr = std::make_unique<StructType>();
 		tpr->name = name;
-		tpr->structDef = &data->allStructDef[data->allStructDef.size() - 1];
+		tpr->structDef = data->allStructDef.size() - 1;
 
 		StructRef tprc = std::make_unique<StructType>();
 		tprc->name = name;
@@ -560,7 +561,7 @@ void Parser::getUnion(bool isTypedef)
 
 		UnionRef tpr = std::make_unique<UnionType>();
 		tpr->name = name;
-		tpr->unionDef = &data->allUnionDef[data->allUnionDef .size() - 1];
+		tpr->unionDef = data->allUnionDef .size() - 1;
 
 		UnionRef tprc = std::make_unique<UnionType>();
 		tprc->name = name;
@@ -684,7 +685,7 @@ void Parser::getUnion(bool isTypedef)
 		data->allUnionDef.push_back(unidef);
 		UnionRef tpr = std::make_unique<UnionType>();
 		tpr->name = name;
-		tpr->unionDef = &data->allUnionDef[data->allUnionDef.size() - 1];
+		tpr->unionDef = data->allUnionDef.size() - 1;
 
 		UnionRef tprc = std::make_unique<UnionType>();
 		tprc->name = name;
@@ -775,7 +776,7 @@ void Parser::getEnum(bool isTypedef)
 	EnumRef type = std::make_unique<EnumType>();
 	EnumRef typec = std::make_unique<EnumType>();
 
-	type->enumDef = &data->allEnumDef[data->allEnumDef.size()-1];
+	type->enumDef = data->allEnumDef.size()-1;
 	typec->enumDef = type->enumDef;
 	typec->isConst = true;
 
@@ -1435,6 +1436,21 @@ void Parser::getEnumVariable(bool isStatic, bool isConst, Types * type, Types * 
 void Parser::getEnumTypedef(bool isStatic, bool isConst, Types * type, Types * constType, std::string & name)
 {
 	getStructTypedef(isStatic, isConst, type, constType, name);
+}
+
+StructDef * Parser::getStructDef(int index)
+{
+	return &data->allStructDef[index];
+}
+
+UnionDef * Parser::getUnionDef(int index)
+{
+	return &data->allUnionDef[index];
+}
+
+EnumDef * Parser::getEnumDef(int index)
+{
+	return &data->allEnumDef[index];
 }
 
 VariableValue Parser::getConstIni(Types * type)

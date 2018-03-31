@@ -1,6 +1,8 @@
 #include "Types.h"
 #include "Custom.h"
 
+#include "Parser.h"
+
 Parser * Types::parser;
 
 Types::Types()
@@ -120,7 +122,7 @@ bool StructType::isStruct()
 
 int StructType::getSize()
 {
-	return structDef->size;
+	return parser->getStructDef(structDef)->size;
 }
 
 std::unique_ptr<Types> UnionType::copy()
@@ -140,7 +142,7 @@ bool UnionType::isUnion()
 
 int UnionType::getSize()
 {
-	return unionDef->size;
+	return parser->getUnionDef(unionDef)->size;
 }
 
 std::unique_ptr<Types> VoidType::copy()
