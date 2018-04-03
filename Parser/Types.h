@@ -35,6 +35,7 @@ public:
 	virtual bool isEnum();
 	virtual bool isVoid();
 	virtual int getSize() = 0;
+	virtual bool canInstance() = 0;
 	virtual std::unique_ptr<Types> copy()=0;
 	bool isStatic;
 	bool isConst;
@@ -47,6 +48,7 @@ public:
 	virtual std::unique_ptr<Types> copy()override;
 	virtual bool isBasic()override;
 	virtual int getSize()override;
+	virtual bool canInstance() override;
 	bool isSigned;
 	bool isFloat;
 	int size;
@@ -58,6 +60,7 @@ public:
 	virtual std::unique_ptr<Types> copy()override;
 	virtual bool isStruct()override;
 	virtual int getSize()override;
+	virtual bool canInstance() override;
 	std::string name;
 	int structDef;
 };
@@ -68,6 +71,7 @@ public:
 	virtual std::unique_ptr<Types> copy()override;
 	virtual bool isUnion()override;
 	virtual int getSize()override;
+	virtual bool canInstance() override;
 	std::string name;
 	int unionDef;
 };
@@ -76,6 +80,7 @@ class VoidType :public Types
 {
 public:
 	virtual std::unique_ptr<Types> copy()override;
+	virtual bool canInstance() override;
 	virtual bool isVoid()override;
 	virtual int getSize()override;
 };
@@ -84,6 +89,7 @@ class PointerType :public Types
 {
 public:
 	virtual std::unique_ptr<Types> copy()override;
+	virtual bool canInstance() override;
 	virtual bool isPointer()override;
 	virtual int getSize()override;
 	Types *targetType;
@@ -93,6 +99,7 @@ class ArrayType :public Types
 {
 public:
 	virtual std::unique_ptr<Types> copy()override;
+	virtual bool canInstance() override;
 	virtual bool isArray()override;
 	virtual int getSize()override;
 	int capacity;
@@ -103,6 +110,7 @@ class EnumType :public Types
 {
 public:
 	virtual std::unique_ptr<Types> copy()override;
+	virtual bool canInstance() override;
 	virtual bool isEnum()override;
 	virtual int getSize()override;
 	int enumDef;
@@ -112,8 +120,10 @@ class FunctionType :public Types
 {
 public:
 	virtual std::unique_ptr<Types> copy()override;
+	virtual bool canInstance() override;
 	virtual bool isFunction()override;
 	virtual int getSize()override;
+	bool hasVariableArg();
 	Types *returnType;
 	std::vector<std::string> args;
 	std::vector<Types *> argsType;

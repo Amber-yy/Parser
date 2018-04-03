@@ -150,6 +150,9 @@ void Parser::parse(const std::string &file)
 		else if (data->type == VARIABLE)
 		{
 
+
+
+
 		}
 
 	}
@@ -365,6 +368,8 @@ void Parser::getStruct(bool isTypedef)
 	/*获取结构体定义*/
 	requireToken("{");
 	
+	strdef.name = name;
+
 	while (true)
 	{
 		if (data->token.peek(0).getString() == "}")
@@ -397,9 +402,9 @@ void Parser::getStruct(bool isTypedef)
 			}
 
 			variable v = getVariables(tp);
-			if (v.type->isFunction())
+			if (!v.type->canInstance())
 			{
-				addError(std::string("不能有成员函数"));
+				addError(std::string("不能添加此类型的成员"));
 			}
 			vs.push_back(v);
 		}
@@ -599,6 +604,7 @@ void Parser::getUnion(bool isTypedef)
 	}
 
 	it = data->symbols[0].find(name);
+	unidef.name = name;
 
 	/*获取结构体定义*/
 	requireToken("{");
@@ -635,9 +641,9 @@ void Parser::getUnion(bool isTypedef)
 			}
 
 			variable v = getVariables(tp);
-			if (v.type->isFunction())
+			if (!v.type->canInstance())
 			{
-				addError(std::string("不能有成员函数"));
+				addError(std::string("不能添加此类型的成员"));
 			}
 			vs.push_back(v);
 		}
@@ -889,6 +895,8 @@ void Parser::parseTypedef()
 	bool isUnion = false;
 	bool isEnum = false;
 
+	data->token.read();
+
 	for (int i = 0;; ++i)
 	{
 		auto &token = data->token.peek(i);
@@ -941,9 +949,47 @@ void Parser::parseTypedef()
 		return;
 	}
 
+	Types *tp = peekType();
 
+	std::vector<variable> vs;
+	while (true)
+	{
+		if (data->token.peek(0).isEos())
+		{
+			if (vs.empty())
+			{
+				addError(std::string("应输入标识符"));
+			}
+			data->token.read();
+			break;
+		}
 
+		variable v = getVariables(tp);
+		vs.push_back(v);
+	}
 
+	for (int i = 0; i <vs.size(); ++i)
+	{
+		auto it = data->symbols[0].find(vs[i].name);
+		if (it != data->symbols[0].end())
+		{
+			addError(std::string("重定义的标识符"));
+		}
+
+		TypeRef tprc = vs[i].type->copy();
+		tprc->isConst = true;
+
+		symbol sbl;
+		sbl.offSet = -1;
+		sbl.isDefined = true;
+		sbl.offSet = -1;
+		sbl.isVariable = false;
+		sbl.type = vs[i].type;
+		sbl.constType = tprc.get();
+		data->allTypes.push_back(std::move(tprc));
+
+		data->symbols[0].insert(std::pair<std::string,symbol>(vs[i].name,sbl));
+	}
 
 }
 
@@ -1524,11 +1570,6 @@ variable Parser::getVariables(Types *pre)
 		addError(std::string("应输入变量名"));
 	}
 
-	if (type->isVoid())
-	{
-		addError(std::string("应输入正确的类型"));
-	}
-
 	variable t;
 	t.name = data->vName[0];
 	t.type = type;
@@ -1699,7 +1740,7 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name,int
 			auto in = it;
 			addIt(in);
 			auto instr = in->token->getString();
-			if (instr == ")" || (in->token->isIdentifier() && name==2))
+			if (instr == ")" || (in->token->isIdentifier() && name!=0))
 			{
 				if (name == 1)
 				{
@@ -1788,6 +1829,29 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name,int
 							addIt(in);
 							tokens.erase(n);
 						}
+
+						if (data->argTokens.size() == 3)
+						{
+							bool flag = true;
+							for (auto it = data->argTokens.begin(); it != data->argTokens.end(); ++it)
+							{
+								if (it->token->getString() != ".")
+								{
+									flag = false;
+									break;
+								}
+							}
+
+							if (!flag)
+							{
+								addError(std::string("错误的参数类型"));
+							}
+
+							f->args.push_back("");
+							f->argsType.push_back(nullptr);
+							break;
+						}
+
 
 						Types *tp = peekType(true);
 						variable t;

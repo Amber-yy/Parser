@@ -105,6 +105,11 @@ int BasicType::getSize()
 	return 4;
 }
 
+bool BasicType::canInstance()
+{
+	return true;
+}
+
 std::unique_ptr<Types> StructType::copy()
 {
 	StructRef p = std::make_unique<StructType>();
@@ -123,6 +128,11 @@ bool StructType::isStruct()
 int StructType::getSize()
 {
 	return parser->getStructDef(structDef)->size;
+}
+
+bool StructType::canInstance()
+{
+	return getSize()>0;
 }
 
 std::unique_ptr<Types> UnionType::copy()
@@ -145,11 +155,21 @@ int UnionType::getSize()
 	return parser->getUnionDef(unionDef)->size;
 }
 
+bool UnionType::canInstance()
+{
+	return getSize()>0;
+}
+
 std::unique_ptr<Types> VoidType::copy()
 {
 	VoidRef p = std::make_unique<VoidType>();
 	*p = *this;
 	return std::move(p);
+}
+
+bool VoidType::canInstance()
+{
+	return false;
 }
 
 bool VoidType::isVoid()
@@ -169,6 +189,11 @@ std::unique_ptr<Types> PointerType::copy()
 	return std::move(p);
 }
 
+bool PointerType::canInstance()
+{
+	return true;
+}
+
 bool PointerType::isPointer()
 {
 	return true;
@@ -184,6 +209,11 @@ std::unique_ptr<Types> ArrayType::copy()
 	ArrayRef p = std::make_unique<ArrayType>();
 	*p = *this;
 	return std::move(p);
+}
+
+bool ArrayType::canInstance()
+{
+	return dataType->canInstance();
 }
 
 bool ArrayType::isArray()
@@ -203,6 +233,11 @@ std::unique_ptr<Types> EnumType::copy()
 	return std::move(p);
 }
 
+bool EnumType::canInstance()
+{
+	return true;
+}
+
 bool EnumType::isEnum()
 {
 	return true;
@@ -220,6 +255,11 @@ std::unique_ptr<Types> FunctionType::copy()
 	return std::move(p);
 }
 
+bool FunctionType::canInstance()
+{
+	return false;
+}
+
 bool FunctionType::isFunction()
 {
 	return true;
@@ -228,4 +268,9 @@ bool FunctionType::isFunction()
 int FunctionType::getSize()
 {
 	return sizeof(void *);
+}
+
+bool FunctionType::hasVariableArg()
+{
+	return argsType[argsType.size()-1]==nullptr;
 }

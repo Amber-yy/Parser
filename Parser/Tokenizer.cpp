@@ -27,6 +27,7 @@ Tokenizer::Tokenizer()
 	data->method.insert(std::pair<char, std::function<void(Tokenizer *)>>('=', &Tokenizer::getAssign));
 	data->method.insert(std::pair<char, std::function<void(Tokenizer *)>>('~', &Tokenizer::getBitNegation));
 	data->method.insert(std::pair<char, std::function<void(Tokenizer *)>>('^', &Tokenizer::getBitXor));
+	data->method.insert(std::pair<char, std::function<void(Tokenizer *)>>('.', &Tokenizer::getMember));
 	data->method.insert(std::pair<char, std::function<void(Tokenizer *)>>(',', &Tokenizer::getComma));
 	data->method.insert(std::pair<char, std::function<void(Tokenizer *)>>('!', &Tokenizer::getNegation));
 	data->method.insert(std::pair<char, std::function<void(Tokenizer *)>>('>', &Tokenizer::getGreater));
