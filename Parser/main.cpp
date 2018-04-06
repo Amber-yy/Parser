@@ -4,7 +4,6 @@
 
 int main()
 {
-
 	Parser p;
 	try
 	{

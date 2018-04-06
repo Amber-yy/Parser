@@ -41,6 +41,16 @@ VoidType * Types::toVoid()
 	return dynamic_cast<VoidType *>(this);
 }
 
+PointerType * Types::toPointer()
+{
+	return dynamic_cast<PointerType *>(this);
+}
+
+FunctionType * Types::toFunction()
+{
+	return dynamic_cast<FunctionType *>(this);
+}
+
 bool Types::isBasic()
 {
 	return false;
@@ -88,6 +98,16 @@ BasicType::BasicType()
 	size=0;
 }
 
+bool BasicType::equal(Types * tp)
+{
+	if (!tp->isBasic())
+	{
+		return false;
+	}
+
+	return memcmp(this, tp, sizeof(BasicType))==0;
+}
+
 std::unique_ptr<Types> BasicType::copy()
 {
 	BasicRef p = std::make_unique<BasicType>();
@@ -108,6 +128,22 @@ int BasicType::getSize()
 bool BasicType::canInstance()
 {
 	return true;
+}
+
+bool StructType::equal(Types * tp)
+{
+	if (!tp->isStruct())
+	{
+		return false;
+	}
+
+	auto tp1 = tp->toStruct();
+	if (isStatic == tp1->isStatic&&isConst == tp1->isConst&&name == tp1->name&&structDef == tp1->structDef)
+	{
+		return true;
+	}
+
+	return false;
 }
 
 std::unique_ptr<Types> StructType::copy()
@@ -135,6 +171,22 @@ bool StructType::canInstance()
 	return getSize()>0;
 }
 
+bool UnionType::equal(Types * tp)
+{
+	if (!tp->isUnion())
+	{
+		return false;
+	}
+
+	auto tp1 = tp->toUnion();
+	if (isStatic == tp1->isStatic&&isConst == tp1->isConst&&name == tp1->name&&unionDef == tp1->unionDef)
+	{
+		return true;
+	}
+
+	return false;
+}
+
 std::unique_ptr<Types> UnionType::copy()
 {
 	UnionRef p = std::make_unique<UnionType>();
@@ -160,6 +212,16 @@ bool UnionType::canInstance()
 	return getSize()>0;
 }
 
+bool VoidType::equal(Types * tp)
+{
+	if (!tp->isVoid())
+	{
+		return false;
+	}
+
+	return true;
+}
+
 std::unique_ptr<Types> VoidType::copy()
 {
 	VoidRef p = std::make_unique<VoidType>();
@@ -180,6 +242,22 @@ bool VoidType::isVoid()
 int VoidType::getSize()
 {
 	return 0;
+}
+
+bool PointerType::equal(Types * tp)
+{
+	if (!tp->isPointer())
+	{
+		return false;
+	}
+
+	auto tp1 = tp->toPointer();
+	if (isStatic == tp1->isStatic&&isConst == tp1->isConst&&targetType->equal(tp1->targetType))
+	{
+		return true;
+	}
+
+	return false;
 }
 
 std::unique_ptr<Types> PointerType::copy()
@@ -204,6 +282,22 @@ int PointerType::getSize()
 	return sizeof(void *);
 }
 
+bool ArrayType::equal(Types * tp)
+{
+	if (!tp->isArray())
+	{
+		return false;
+	}
+
+	auto tp1 = tp->toArray();
+	if (isStatic == tp1->isStatic&&isConst == tp1->isConst&&capacity==tp1->capacity&&dataType->equal(tp1->dataType))
+	{
+		return true;
+	}
+
+	return false;
+}
+
 std::unique_ptr<Types> ArrayType::copy()
 {
 	ArrayRef p = std::make_unique<ArrayType>();
@@ -226,6 +320,16 @@ int ArrayType::getSize()
 	return capacity*dataType->getSize();
 }
 
+bool EnumType::equal(Types * tp)
+{
+	if (!tp->isEnum())
+	{
+		return false;
+	}
+
+	return memcmp(this, tp, sizeof(EnumType)) == 0;
+}
+
 std::unique_ptr<Types> EnumType::copy()
 {
 	EnumRef p = std::make_unique<EnumType>();
@@ -246,6 +350,40 @@ bool EnumType::isEnum()
 int EnumType::getSize()
 {
 	return sizeof(int);
+}
+
+bool FunctionType::equal(Types * tp)
+{
+	if (!tp->isFunction())
+	{
+		return false;
+	}
+
+	if (isStatic != tp->isStatic)
+	{
+		return false;
+	}
+
+	auto tp1 = tp->toFunction();
+
+	if (argsType.size() != tp1 -> argsType.size())
+	{
+		return false;
+	}
+
+	for (int i = 0; i < argsType.size(); ++i)
+	{
+		if (argsType[i] == tp1->argsType[i] || argsType[i]->equal(tp1->argsType[i]))
+		{
+			continue;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	return true;
 }
 
 std::unique_ptr<Types> FunctionType::copy()

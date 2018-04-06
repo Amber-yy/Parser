@@ -24,6 +24,7 @@ public:
 	void getUnion(bool isTypedef = false);
 	void getEnum(bool isTypedef = false);
 	void parseTypedef();
+	void parseVariable();
 	void addError(std::string &info);
 	void requireToken(const std::string &token);
 	void createBaseType();

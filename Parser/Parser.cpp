@@ -149,10 +149,7 @@ void Parser::parse(const std::string &file)
 		}
 		else if (data->type == VARIABLE)
 		{
-
-
-
-
+			parseVariable();
 		}
 
 	}
@@ -163,6 +160,11 @@ void Parser::parse(const std::string &file)
 
 void Parser::getLine()
 {
+	while (data->token.peek(0).isEos())
+	{
+		data->token.read();
+	}
+
 	int i;
 
 	data->line.clear();
@@ -218,7 +220,6 @@ void Parser::getLine()
 			data->type = tp;
 		}
 	};
-
 
 	for (;it != data->line.end(); ++it)
 	{
@@ -402,10 +403,11 @@ void Parser::getStruct(bool isTypedef)
 			}
 
 			variable v = getVariables(tp);
-			if (!v.type->canInstance())
+			if (!v.type->canInstance()|| v.type->isStatic || v.type->isConst)
 			{
 				addError(std::string("不能添加此类型的成员"));
 			}
+
 			vs.push_back(v);
 		}
 
@@ -641,10 +643,11 @@ void Parser::getUnion(bool isTypedef)
 			}
 
 			variable v = getVariables(tp);
-			if (!v.type->canInstance())
+			if (!v.type->canInstance() || v.type->isStatic || v.type->isConst)
 			{
 				addError(std::string("不能添加此类型的成员"));
 			}
+
 			vs.push_back(v);
 		}
 
@@ -854,6 +857,13 @@ void Parser::getEnum(bool isTypedef)
 			t.offSet = data->globalRegion.currentOffset;
 			data->globalRegion.addValue(v);
 			data->symbols[0].insert(std::pair<std::string,symbol>(str,t));
+
+			Value val;
+			val.isDefined = true;
+			val.offSet = t.offSet;
+			val.type = t.type;
+			data->globalRegion.values.insert(std::pair<std::string,Value>(str,val));
+
 			v.release();
 		}
 		else
@@ -991,6 +1001,139 @@ void Parser::parseTypedef()
 		data->symbols[0].insert(std::pair<std::string,symbol>(vs[i].name,sbl));
 	}
 
+}
+
+void Parser::parseVariable()
+{
+	bool isExtern = false;
+
+	if (data->token.peek(0).getString() == "extern")
+	{
+		data->token.read();
+		isExtern = true;
+	}
+
+	Types *tp = peekType();
+
+	if (tp->isStatic&&isExtern)
+	{
+		addError(std::string("不能声明多个储存符"));
+	}
+
+	while (true)
+	{
+		variable v = getVariables(tp);
+		if (!v.type->isFunction())
+		{
+			if (isExtern)
+			{
+				auto it = data->symbols[0].find(v.name);
+				/*首先检查符号表中是否已经有这个符号*/
+				if (it != data->symbols[0].end())
+				{
+					if (it->second.isDefined || it->second.type != v.type)
+					{
+						addError(std::string("重定义的标识符"));
+					}
+				}
+				else
+				{
+					symbol t;
+					t.type = v.type;
+					t.isDefined = false;
+					t.isVariable = true;
+					t.offSet = data->globalRegion.currentOffset;
+
+					VariableValue vv;
+					vv.type = t.type;
+					vv.buffer = new char[t.type->getSize()];
+					memset(vv.buffer, 0, t.type->getSize());
+
+					Value val;
+					val.isDefined = false;
+					val.offSet = t.offSet;
+					val.type = t.type;
+
+					data->globalRegion.addValue(vv);
+					data->globalRegion.values.insert(std::pair<std::string, Value>(v.name, val));
+					data->symbols[0].insert(std::pair<std::string, symbol>(v.name, t));
+
+					vv.release();
+				}
+			}
+			else
+			{
+				int index = tp->isStatic ? 1 : 0;
+
+				auto it = data->symbols[index].find(v.name);
+				/*首先检查符号表中是否已经有这个符号*/
+				if (it != data->symbols[index].end())
+				{
+					if (it->second.isDefined || !it->second.type->equal(v.type))
+					{
+						addError(std::string("重定义的标识符"));
+					}
+				}
+
+				VariableValue vv = getConstIni(tp);
+				if (vv.buffer == nullptr)
+				{
+					vv.buffer = new char[tp->getSize()];
+					memset(vv.buffer, 0, tp->getSize());
+				}
+
+				Region *region;
+				if (tp->isStatic)
+				{
+					region = &data->staticRegion;
+				}
+				else
+				{
+					region = &data->globalRegion;
+				}
+
+				symbol t;
+				t.type = v.type;
+				t.isDefined = true;
+				t.isVariable = true;
+				t.offSet = region->currentOffset;
+
+				Value val;
+				val.isDefined = true;
+				val.offSet = t.offSet;
+				val.type = t.type;
+
+				region->addValue(vv);
+				if (!tp->isStatic)
+				{
+					data->globalRegion.values.insert(std::pair<std::string, Value>(v.name, val));
+					data->symbols[0].insert(std::pair<std::string, symbol>(v.name, t));
+				}
+				else
+				{
+					data->symbols[1].insert(std::pair<std::string, symbol>(v.name, t));
+				}
+
+				vv.release();
+			}
+
+		}
+		else
+		{
+
+		}
+
+		if (data->token.peek(0).getString() == ",")
+		{
+			data->token.read();
+		}
+		else
+		{
+			requireToken(";");
+			return;
+		}
+
+	}
 }
 
 void Parser::addError(std::string & info)
@@ -1577,6 +1720,11 @@ variable Parser::getVariables(Types *pre)
 	data->vName.pop_back();
 	data->origin.pop_back();
 
+	//t.type->isConst = pre->isConst;
+	bool sta = pre->isStatic;
+	pre->isStatic = false;
+	t.type->isStatic =sta;
+
 	return t;
 }
 
@@ -1655,7 +1803,7 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name,int
 
 					++n;
 
-					while (n->token->getString() == "(")
+					while (n->token->getString() == "("||n->token->getString()=="const")
 					{
 						++n;
 					}
@@ -1687,7 +1835,10 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name,int
 
 				PointerRef pt = std::make_unique<PointerType>();
 				pt->targetType = parseType(pre, tokens, 2,level);
-				pt->targetType->isConst = isConst;
+				if (pt->targetType != pre)
+				{
+					pt->targetType->isConst = isConst;
+				}
 
 				auto result = pt.get();
 				data->allTypes.push_back(std::move(pt));
@@ -1726,7 +1877,10 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name,int
 			clearBarack(i1, i2);
 
 			auto p = parseType(pre,tokens,1,level);
-			p->isConst = isConst;
+			if (p != pre)
+			{
+				p->isConst = isConst;
+			}
 
 			return p;
 		}
@@ -2096,6 +2250,7 @@ Types * Parser::peekType(bool args)
 		{
 			auto p = data->allTypes[22]->copy();
 			p->isStatic = isStatic;
+			p->isConst = isConst;
 			auto np = p.get();
 			data->allTypes.push_back(std::move(p));
 			clear();
@@ -2182,8 +2337,20 @@ Types * Parser::peekType(bool args)
 				break;
 			}
 
-			if (syb->isVariable || !basic.empty())
+			if (syb->isVariable)
 			{
+				if (!basic.empty())
+				{
+					if (!args)
+					{
+						data->token.unRead();
+					}
+					else
+					{
+						--it;
+					}
+					break;
+				}
 				addError(std::string("无效的类型组合说明符"));
 			}
 			
@@ -2223,6 +2390,7 @@ Types * Parser::peekType(bool args)
 
 	auto p=data->allTypes[result]->copy();
 	p->isStatic = isStatic;
+	p->isConst = isConst;
 	auto pt = p.get();
 	data->allTypes.push_back(std::move(p));
 

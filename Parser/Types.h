@@ -14,6 +14,9 @@ class BasicType;
 class ArrayType;
 class VoidType;
 class Parser;
+class PointerType;
+class ArrayType;
+class FunctionType;
 
 class Types
 {
@@ -26,6 +29,8 @@ public:
 	BasicType *toBasic();
 	ArrayType *toArray();
 	VoidType *toVoid();
+	PointerType *toPointer();
+	FunctionType *toFunction();
 	virtual bool isBasic();
 	virtual bool isPointer();
 	virtual bool isArray();
@@ -34,6 +39,7 @@ public:
 	virtual bool isUnion();
 	virtual bool isEnum();
 	virtual bool isVoid();
+	virtual bool equal(Types *tp)=0;
 	virtual int getSize() = 0;
 	virtual bool canInstance() = 0;
 	virtual std::unique_ptr<Types> copy()=0;
@@ -45,6 +51,7 @@ class BasicType :public Types
 {
 public:
 	BasicType();
+	virtual bool equal(Types *tp)override;
 	virtual std::unique_ptr<Types> copy()override;
 	virtual bool isBasic()override;
 	virtual int getSize()override;
@@ -57,6 +64,7 @@ public:
 class StructType :public Types
 {
 public:
+	virtual bool equal(Types *tp)override;
 	virtual std::unique_ptr<Types> copy()override;
 	virtual bool isStruct()override;
 	virtual int getSize()override;
@@ -68,6 +76,7 @@ public:
 class UnionType :public Types
 {
 public:
+	virtual bool equal(Types *tp)override;
 	virtual std::unique_ptr<Types> copy()override;
 	virtual bool isUnion()override;
 	virtual int getSize()override;
@@ -79,6 +88,7 @@ public:
 class VoidType :public Types
 {
 public:
+	virtual bool equal(Types *tp)override;
 	virtual std::unique_ptr<Types> copy()override;
 	virtual bool canInstance() override;
 	virtual bool isVoid()override;
@@ -88,6 +98,7 @@ public:
 class PointerType :public Types
 {
 public:
+	virtual bool equal(Types *tp)override;
 	virtual std::unique_ptr<Types> copy()override;
 	virtual bool canInstance() override;
 	virtual bool isPointer()override;
@@ -98,6 +109,7 @@ public:
 class ArrayType :public Types
 {
 public:
+	virtual bool equal(Types *tp)override;
 	virtual std::unique_ptr<Types> copy()override;
 	virtual bool canInstance() override;
 	virtual bool isArray()override;
@@ -109,6 +121,7 @@ public:
 class EnumType :public Types
 {
 public:
+	virtual bool equal(Types *tp)override;
 	virtual std::unique_ptr<Types> copy()override;
 	virtual bool canInstance() override;
 	virtual bool isEnum()override;
@@ -119,6 +132,7 @@ public:
 class FunctionType :public Types
 {
 public:
+	virtual bool equal(Types *tp)override;
 	virtual std::unique_ptr<Types> copy()override;
 	virtual bool canInstance() override;
 	virtual bool isFunction()override;
