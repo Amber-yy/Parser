@@ -1,11 +1,19 @@
 #include <fstream>
 #include <vector>
 #include <map>
+#include <stack>
 
 #include "judge.h"
 #include "Preprocessor.h"
+#include "Tokenizer.h"
 
 #define DEBUG
+
+struct op
+{
+	int pre;
+	int fun;
+};
 
 struct Macro
 {
@@ -21,6 +29,7 @@ struct Preprocessor::Data
 	int *currentIndex;
 	std::string *currentCode;
 	int isIf;
+	std::map<std::string, op> ops;
 	std::map<std::string, Macro> macros;
 	std::vector<std::string> fileStack;
 };
@@ -49,15 +58,85 @@ std::string Preprocessor::getLibDir(int index)
 
 bool Preprocessor::parseExpr(std::string & code)
 {
+	Tokenizer token;
+	token.parse(code);
 
-#ifdef DEBUG
-	if (code == "0")
+	bool number = true;
+
+	for (int i = 0;token.hasMore(i); ++i)
 	{
-		return false;
+		if (token.peek(i).isIntLiteral()==number)
+		{
+			number = !number;
+		}	
+		else
+		{
+			addError(std::string("应输入正确的表达式"));
+		}
 	}
-	return true;
-#endif 
 
+	if (number)
+	{
+		addError(std::string("应输入整数"));
+	}
+
+	std::stack<long long> numbers;
+	std::stack<op> ops;
+
+	for (int i = 0; token.hasMore(); ++i)
+	{
+		auto &t = token.read();
+		if (t.isIntLiteral())
+		{
+			numbers.push(t.getInteger());
+		}
+		else
+		{
+			auto it = data->ops.find(t.getString());
+			if (it == data->ops.end())
+			{
+				addError(std::string("应输入正确的运算符"));
+			}
+
+			if (ops.empty())
+			{
+				ops.push(it->second);
+			}
+			else if (it->second.pre>=ops.top().pre)
+			{
+				op t = ops.top();
+				ops.pop();
+
+				long long a = numbers.top();
+				numbers.pop();
+				long long b = numbers.top();
+				numbers.pop();
+				long long c = calculate(a, b,t.fun);
+
+				numbers.push(c);
+				ops.push(it->second);
+			}
+			else
+			{
+				ops.push(it->second);
+			}
+		}
+	}
+
+	while (!ops.empty())
+	{
+		op t = ops.top();
+		ops.pop();
+
+		long long a = numbers.top();
+		numbers.pop();
+		long long b = numbers.top();
+		numbers.pop();
+		long long c = calculate(b, a, t.fun);
+		numbers.push(c);
+	}
+
+	return numbers.top();
 }
 
 std::string Preprocessor::getIntMacro(std::string & macro)
@@ -288,6 +367,26 @@ void Preprocessor::parseElse(std::string & code, int & index,std::string &result
 Preprocessor::Preprocessor()
 {
 	data = new Data;
+
+	data->ops.insert(std::pair<std::string, op>("*", {1,1}));
+	data->ops.insert(std::pair<std::string, op>("/", {1,2}));
+	data->ops.insert(std::pair<std::string, op>("%", { 1,3 }));
+
+	data->ops.insert(std::pair<std::string, op>("+", { 2,4 }));
+	data->ops.insert(std::pair<std::string, op>("-", { 2,5 }));
+
+	data->ops.insert(std::pair<std::string, op>(">>", { 3,6 }));
+	data->ops.insert(std::pair<std::string, op>("<<", { 3,7 }));
+
+	data->ops.insert(std::pair<std::string, op>(">", { 4,8 }));
+	data->ops.insert(std::pair<std::string, op>("<", { 4,9 }));
+	data->ops.insert(std::pair<std::string, op>("==", { 4,10 }));
+	data->ops.insert(std::pair<std::string, op>(">=", { 4,11 }));
+	data->ops.insert(std::pair<std::string, op>("<=", { 4,12 }));
+	data->ops.insert(std::pair<std::string, op>("!=", { 4,13 }));
+
+	data->ops.insert(std::pair<std::string, op>("&&", { 5,14 }));
+	data->ops.insert(std::pair<std::string, op>("||", { 6,15 }));
 }
 
 Preprocessor::~Preprocessor()
@@ -1226,6 +1325,76 @@ bool Preprocessor::parseCondition(std::string & code, int & index)
 	}
 
 	return	parseExpr(expr);
+}
+
+long long Preprocessor::calculate(long long a, long long b,int index)
+{
+	if (index == 1)
+	{
+		return a * b;
+	}
+	else if (index == 2)
+	{
+		if (b == 0)
+		{
+			addError(std::string("不能使用0作除数"));
+		}
+		return a / b;
+	}
+	else if (index == 3)
+	{
+		return a%b;
+	}
+	else if (index == 4)
+	{
+		return a + b;
+	}
+	else if (index == 5)
+	{
+		return a - b;
+	}
+	else if (index == 6)
+	{
+		return a >> b;
+	}
+	else if (index == 7)
+	{
+		return a << b;
+	}
+	else if (index == 8)
+	{
+		return a > b;
+	}
+	else if (index == 9)
+	{
+		return a < b;
+	}
+	else if (index == 10)
+	{
+		return a == b;
+	}
+	else if (index == 11)
+	{
+		return a >= b;
+	}
+	else if (index == 12)
+	{
+		return a <= b;
+	}
+	else if (index == 13)
+	{
+		return a != b;
+	}
+	else if (index == 14)
+	{
+		return a&&b;
+	}
+	else if (index == 15)
+	{
+		return a || b;
+	}
+
+	return -1;
 }
 
 std::string Preprocessor::getIf(std::string & code, int & index)

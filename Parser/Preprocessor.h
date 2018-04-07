@@ -37,6 +37,7 @@ public:
 	bool isCmd(std::string &code, int index);
 	bool defined(const std::string &macro);
 	bool parseCondition(std::string &code, int &index);
+	long long calculate(long long a,long long b,int index);
 protected:
 	struct Data;
 	Data *data;
