@@ -1644,9 +1644,203 @@ EnumDef * Parser::getEnumDef(int index)
 
 VariableValue Parser::getConstIni(Types * type)
 {
-	VariableValue t;
-	t.type = type;
-	return t;
+	if (data->token.peek(0).getString() != "=")
+	{
+		VariableValue t;
+		t.type = type;
+		return t;
+	}
+
+	data->token.read();
+
+	bool isBaracket = false;
+
+	if (type->isArray() || type->isStruct() || type->isUnion())
+	{
+		isBaracket = true;
+	}
+
+	if (isBaracket)
+	{
+		requireToken("{");
+	}
+
+	VariableValue v= getConstIniCore(type);
+
+	if (isBaracket)
+	{
+		requireToken("}");
+	}
+
+	return v;
+}
+
+VariableValue Parser::getConstIniCore(Types * type)
+{
+	if (type->isBasic())
+	{
+
+		if (type->toBasic()->isFloat)
+		{
+			VariableValue v;
+			v.buffer = new char[type->getSize()];
+			v.type = type;
+			double t = std::atof(data->token.read().getString().c_str());
+			if (type->getSize() == sizeof(float))
+			{
+				*(float *)v.buffer = t;
+			}
+			else
+			{
+				*(double *)v.buffer = t;
+			}
+			return v;
+		}
+		else
+		{
+			int size = type->getSize();
+			VariableValue v;
+			v.buffer = new char[size];
+			v.type = type;
+			long long t = std::atoll(data->token.read().getString().c_str());
+			auto basic = type->toBasic();
+
+			if (size== sizeof(short))
+			{
+				if (basic->isSigned)
+				{
+					*(short *)v.buffer = t;
+				}
+				else
+				{
+					*(unsigned short *)v.buffer = t;
+				}
+
+			}
+			else if (size == sizeof(int))
+			{
+				if (basic->isSigned)
+				{
+					*(int *)v.buffer = t;
+				}
+				else
+				{
+					*(unsigned int *)v.buffer = t;
+				}
+			}
+			else if (size == sizeof(long long))
+			{
+				if (basic->isSigned)
+				{
+					*(int *)v.buffer = t;
+				}
+				else
+				{
+					*(unsigned int *)v.buffer = t;
+				}
+			}
+
+			return v;
+		}
+	}
+	else if(type->isArray())
+	{
+		VariableValue v;
+		v.buffer = new char[type->getSize()];
+		v.type = type;
+		memset(v.buffer, 0, type->getSize());
+		bool isBaracket = false;
+		
+		if (data->token.peek(0).getString() == "{")
+		{
+			data->token.read();
+			isBaracket = true;
+		}
+
+		auto arr = type->toArray();
+
+		for (int i = 0; i < arr->capacity; ++i)
+		{
+			VariableValue vv;
+			vv = getConstIniCore(arr->dataType);
+
+			memcpy(v.buffer + i*arr->dataType->getSize(), vv.buffer, arr->dataType->getSize());
+
+			if (data->token.peek(0).getString() == "}")
+			{
+				break;
+			}
+
+			requireToken(",");
+		}
+
+		if (isBaracket)
+		{
+			requireToken("}");
+		}
+
+		return v;
+	}
+	else if (type->isStruct())
+	{ 
+		VariableValue v;
+		v.buffer = new char[type->getSize()];
+		v.type = type;
+		memset(v.buffer, 0, type->getSize());
+		bool isBaracket = false;
+
+		if (data->token.peek(0).getString() == "{")
+		{
+			data->token.read();
+			isBaracket = true;
+		}
+
+		auto str = type->toStruct();
+
+		auto &strdef = data->allStructDef[str->structDef];
+
+		for (int i = 0; i <strdef.types.size(); ++i)
+		{
+			VariableValue vv;
+			vv = getConstIniCore(strdef.types[i]);
+
+			memcpy(v.buffer +strdef.offSets[i], vv.buffer, strdef.types[i]->getSize());
+
+			if (data->token.peek(0).getString() == "}")
+			{
+				break;
+			}
+
+			requireToken(",");
+		}
+
+		if (isBaracket)
+		{
+			requireToken("}");
+		}
+
+		return v;
+	}
+	else if (type->isUnion())
+	{
+		auto uni = type->toUnion();
+		int index = -1,max=-1;
+
+		auto &unidef = data->allStructDef[uni->unionDef];
+
+		for (int i = 0; i < unidef.types.size(); ++i)
+		{
+			if (unidef.types[i]->getSize() > max)
+			{
+				max = unidef.types[i]->getSize();
+				index = i;
+			}
+		}
+
+		return getConstIniCore(unidef.types[index]);
+	}
+
+	addError(std::string("错误的初始化方式"));
 }
 
 variable Parser::getVariables(Types *pre)

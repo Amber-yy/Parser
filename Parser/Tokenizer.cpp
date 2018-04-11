@@ -730,11 +730,10 @@ void Tokenizer::getNumber()
 			isOct = true;
 			origin += "0";
 		}
-		else if(temp!='l'&&temp!='L'&&temp != 'u'&&temp != 'U')
-		{
-			addError(std::string("错误的数字格式"));
-		}
-
+		//else if(temp!='l'&&temp!='L'&&temp != 'u'&&temp != 'U')
+		//{
+		//	addError(std::string("错误的数字格式"));
+		//}
 	}
 
 	if (isHex || isOct)
@@ -1044,7 +1043,7 @@ bool Tokenizer::isPre() const
 		return true;
 	}
 
-	return data->allToken[data->allToken.size()-2].isBinary();
+	return data->allToken[data->allToken.size()-1].isBinary();
 }
 
 char Tokenizer::getChar()
