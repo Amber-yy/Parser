@@ -39,6 +39,12 @@
     <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="AStree.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="FunctionDef.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Parser.h">
@@ -60,6 +66,12 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Types.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="AStree.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="FunctionDef.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

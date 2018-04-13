@@ -28,6 +28,7 @@ public:
 	void addError(std::string &info);
 	void requireToken(const std::string &token);
 	void createBaseType();
+	void getFunctionDef(const std::string &name,Types *type);
 	void getStructVariable(bool isStatic,bool isConst,Types *type,Types *constType);
 	void getStructTypedef(bool isStatic, bool isConst, Types *type, Types *constType,std::string &name);
 	void getUnionVariable(bool isStatic, bool isConst, Types *type, Types *constType);

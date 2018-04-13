@@ -3,12 +3,15 @@
 #include "Tokenizer.h"
 #include "Types.h"
 #include "Custom.h"
+#include "FunctionDef.h"
 
 #include <iostream>
 #include <memory>
 #include <list>
 #include <map>
 #include <algorithm>
+
+using FunctionDefRef = std::unique_ptr<FunctionDef>;
 
 enum ParseType
 {
@@ -35,6 +38,7 @@ struct symbol
 {
 	bool isVariable;
 	bool isDefined;
+	bool isStatic;
 	int offSet;
 	Types *type;
 	Types *constType;//只有当isVariable为false时这个字段才有效
@@ -103,10 +107,12 @@ struct Parser::Data
 	std::list<Token *> line;
 	std::vector<std::list<TypeToken>> origin;
 	std::vector<std::string>vName;
+	std::map<std::string,FunctionDefRef> allFunctions;
 	std::list<TypeToken> argTokens;
 	ParseType type;
 	int currentLevel;
 	int index;
+	int mainIndex;
 };
 
 Parser::Parser()
@@ -127,6 +133,7 @@ void Parser::parse(const std::string &file)
 	data->token.parse(code);
 	data->currentLevel = 0;
 	data->symbols.resize(2);
+	data->mainIndex = -1;
 
 	while (data->token.hasMore())
 	{
@@ -854,15 +861,15 @@ void Parser::getEnum(bool isTypedef)
 			t.isDefined = true;
 			t.isVariable = true;
 			t.type = tp;
-			t.offSet = data->globalRegion.currentOffset;
-			data->globalRegion.addValue(v);
-			data->symbols[0].insert(std::pair<std::string,symbol>(str,t));
+			t.offSet = data->staticRegion.currentOffset;
+			data->staticRegion.addValue(v);
+			data->symbols[1].insert(std::pair<std::string,symbol>(str,t));
 
-			Value val;
-			val.isDefined = true;
-			val.offSet = t.offSet;
-			val.type = t.type;
-			data->globalRegion.values.insert(std::pair<std::string,Value>(str,val));
+			//Value val;
+			//val.isDefined = true;
+			//val.offSet = t.offSet;
+			//val.type = t.type;
+			//data->globalRegion.values.insert(std::pair<std::string,Value>(str,val));
 
 			v.release();
 		}
@@ -1116,10 +1123,78 @@ void Parser::parseVariable()
 
 				vv.release();
 			}
-
 		}
 		else
 		{
+			int index;
+			Region *region;
+
+			if (v.type->isStatic)
+			{
+				index = 1;
+				region = &data->staticRegion;
+			}
+			else
+			{
+				index = 0;
+				region = &data->globalRegion;
+			}
+
+			bool isDef = data->token.peek(0).getString() == "{";
+			auto it = data->symbols[index].find(v.name);
+
+			if (it != data->symbols[index].end())
+			{
+				if (it->second.isDefined)
+				{
+					addError(std::string("重定义的标识符"));
+				}
+				else if (!it->second.type->equal(v.type))
+				{
+					addError(std::string("重定义的标识符，不同的类型"));
+				}
+
+				if (isDef)
+				{
+					getFunctionDef(v.name, v.type);
+					region->values.find(v.name)->second.isDefined = true;
+					return;
+				}
+
+			}
+			else
+			{
+				symbol t;
+				t.type = v.type;
+				t.isDefined = false;
+				t.isVariable = true;
+				t.offSet = region->currentOffset;
+
+				Value val;
+				val.isDefined = true;
+				val.offSet = t.offSet;
+				val.type = t.type;
+
+				FunctionDefRef foo = std::make_unique<FunctionDef>();
+				FunctionDef *fptr = foo.get();
+				data->allFunctions.insert(std::pair<std::string, FunctionDefRef>(v.name, std::move(foo)));
+
+				region->values.insert(std::pair<std::string, Value>(v.name, val));
+				data->symbols[index].insert(std::pair<std::string, symbol>(v.name, t));
+
+				VariableValue vv;
+				vv.buffer = new char[sizeof(void *)];
+				vv.type = t.type;
+				region->addValue(vv);
+				vv.release();
+
+				if (isDef)
+				{
+					getFunctionDef(v.name, v.type);
+					region->values.find(v.name)->second.isDefined = true;
+					return;
+				}
+			}
 
 		}
 
@@ -1253,6 +1328,11 @@ void Parser::createBaseType()
 	data->allTypes.push_back(std::move(double2));
 
 	data->allTypes.push_back(std::move(vod));
+
+}
+
+void Parser::getFunctionDef(const std::string &name, Types * type)
+{
 
 }
 
