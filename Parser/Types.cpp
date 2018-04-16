@@ -108,6 +108,11 @@ bool BasicType::equal(Types * tp)
 	return memcmp(this, tp, sizeof(BasicType))==0;
 }
 
+bool BasicType::compatible(Types * tp)
+{
+	return tp->isBasic();
+}
+
 std::unique_ptr<Types> BasicType::copy()
 {
 	BasicRef p = std::make_unique<BasicType>();
@@ -144,6 +149,11 @@ bool StructType::equal(Types * tp)
 	}
 
 	return false;
+}
+
+bool StructType::compatible(Types * tp)
+{
+	return tp->isStruct() && !tp->toStruct()->name.empty() && tp->toStruct()->name == name;
 }
 
 std::unique_ptr<Types> StructType::copy()
@@ -187,6 +197,11 @@ bool UnionType::equal(Types * tp)
 	return false;
 }
 
+bool UnionType::compatible(Types * tp)
+{
+	return tp->isUnion() && !tp->toUnion()->name.empty() && tp->toUnion()->name == name;
+}
+
 std::unique_ptr<Types> UnionType::copy()
 {
 	UnionRef p = std::make_unique<UnionType>();
@@ -220,6 +235,11 @@ bool VoidType::equal(Types * tp)
 	}
 
 	return true;
+}
+
+bool VoidType::compatible(Types * tp)
+{
+	return false;
 }
 
 std::unique_ptr<Types> VoidType::copy()
@@ -260,6 +280,22 @@ bool PointerType::equal(Types * tp)
 	return false;
 }
 
+bool PointerType::compatible(Types * tp)
+{
+	if (!tp->isPointer())
+	{
+		return false;
+	}
+
+	PointerType *ptr = tp->toPointer();
+	if (targetType->isVoid() || ptr->targetType->isVoid())
+	{
+		return true;
+	}
+
+	return targetType->equal(ptr);
+}
+
 std::unique_ptr<Types> PointerType::copy()
 {
 	PointerRef p = std::make_unique<PointerType>();
@@ -298,6 +334,11 @@ bool ArrayType::equal(Types * tp)
 	return false;
 }
 
+bool ArrayType::compatible(Types * tp)
+{
+	return equal(tp);
+}
+
 std::unique_ptr<Types> ArrayType::copy()
 {
 	ArrayRef p = std::make_unique<ArrayType>();
@@ -328,6 +369,21 @@ bool EnumType::equal(Types * tp)
 	}
 
 	return memcmp(this, tp, sizeof(EnumType)) == 0;
+}
+
+bool EnumType::compatible(Types * tp)
+{
+	if (tp->isEnum())
+	{
+		return true;
+	}
+	if (tp->isBasic())
+	{
+		BasicType *bp = tp->toBasic();
+		return !bp->isFloat;
+	}
+
+	return false;
 }
 
 std::unique_ptr<Types> EnumType::copy()
@@ -384,6 +440,11 @@ bool FunctionType::equal(Types * tp)
 	}
 
 	return true;
+}
+
+bool FunctionType::compatible(Types * tp)
+{
+	return equal(tp);
 }
 
 std::unique_ptr<Types> FunctionType::copy()

@@ -41,6 +41,15 @@ public:
 	void getEnumVariable(bool isStatic, bool isConst, Types *type, Types *constType);
 	void getEnumTypedef(bool isStatic, bool isConst, Types *type, Types *constType, std::string &name);
 	AStreeRef getStatement(AStree *block);
+	AStreeRef getVariableDefState(AStree *block);
+	AStreeRef getExprState(AStree *block);
+	AStreeRef getSwitchState(AStree *block);
+	AStreeRef getIfState(AStree *block);
+	AStreeRef getWhileState(AStree *block);
+	AStreeRef getDoWhileState(AStree *block);
+	AStreeRef getForState(AStree *block);
+	AStreeRef getBreakState(AStree *block);
+	AStreeRef getReturnState(AStree *block);
 	AStreeRef getBlock(FunctionDef *fun=nullptr,AStree *statement=nullptr);
 	StructDef *getStructDef(int index);
 	UnionDef *getUnionDef(int index);

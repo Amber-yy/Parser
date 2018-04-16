@@ -117,6 +117,7 @@ struct Parser::Data
 	FunctionDef *currentFunction;
 	char *stack;
 	ParseType type;
+	int currentOffset;
 	int currentLevel;
 	int index;
 	int mainIndex;
@@ -1403,6 +1404,7 @@ void Parser::createBaseType()
 
 void Parser::getFunctionDef()
 {
+	data->currentOffset = 0;
 	data->currentFunction->setBlock(getBlock(data->currentFunction));
 }
 
@@ -1779,18 +1781,118 @@ void Parser::getEnumTypedef(bool isStatic, bool isConst, Types * type, Types * c
 
 AStreeRef Parser::getStatement(AStree * block)
 {
-	
 
+	if (data->token.peek(0).getString() == "return")
+	{
+		return getReturnState(block);
+	}
+	else if (data->token.peek(0).getString() == "break")
+	{
+		return getBreakState(block);
+	}
+	else if (data->token.peek(0).getString() == "for")
+	{
+		return getForState(block);
+	}
+	else if (data->token.peek(0).getString() == "while")
+	{
+		return getWhileState(block);
+	}
+	else if (data->token.peek(0).getString() == "if")
+	{
+		return getIfState(block);
+	}
+	else if (data->token.peek(0).getString() == "do")
+	{
+		return getDoWhileState(block);
+	}
+	else if (data->token.peek(0).getString() == "switch")
+	{
+		return getSwitchState(block);
+	}
+	else if (data->token.peek(0).getString() == "{")
+	{
+		return getBlock(data->currentFunction,block);
+	}
+	else if(data->token.peek(0).isKeyWord()||!findSymbol(data->token.peek(0).getString())->isVariable)
+	{
+		getVariableDefState(block);
+	}
+	else
+	{
+		getExprState(block);
+	}
 
+}
 
+AStreeRef Parser::getVariableDefState(AStree * block)
+{
+	return AStreeRef();
+}
+
+AStreeRef Parser::getExprState(AStree * block)
+{
+	return AStreeRef();
+}
+
+AStreeRef Parser::getSwitchState(AStree * block)
+{
+	return AStreeRef();
+}
+
+AStreeRef Parser::getIfState(AStree * block)
+{
+	AStreeRef rs = std::make_unique<ReturnState>();
+	rs->function = data->currentFunction;
+	rs->block = block;
 
 
 
 
 }
 
+AStreeRef Parser::getWhileState(AStree * block)
+{
+	return AStreeRef();
+}
+
+AStreeRef Parser::getDoWhileState(AStree * block)
+{
+	return AStreeRef();
+}
+
+AStreeRef Parser::getForState(AStree * block)
+{
+	return AStreeRef();
+}
+
+AStreeRef Parser::getBreakState(AStree * block)
+{
+	return AStreeRef();
+}
+
+AStreeRef Parser::getReturnState(AStree * block)
+{
+	FunctionType *tp = data->currentFunction->getType()->toFunction();
+	
+	AStreeRef rs = std::make_unique<ReturnState>();
+	rs->function = data->currentFunction;
+	rs->block = block;
+
+	if (tp->returnType->isVoid())
+	{	
+		return rs;
+	}
+
+	ReturnState *r = rs->toReturnState();
+	r->expr = getExprState(block);
+
+	return rs;
+}
+
 AStreeRef Parser::getBlock(FunctionDef * fun, AStree * statement)
 {
+	int offset = data->currentOffset;
 	++data->currentLevel;
 	if (data->symbols.size() < data->currentLevel)
 	{
@@ -1800,7 +1902,7 @@ AStreeRef Parser::getBlock(FunctionDef * fun, AStree * statement)
 
 	if (statement != nullptr)
 	{
-
+		//forstate
 	}
 	else if (fun != nullptr)
 	{
@@ -1839,6 +1941,7 @@ AStreeRef Parser::getBlock(FunctionDef * fun, AStree * statement)
 
 	requireToken("}");
 	--data->currentLevel;
+	data->currentOffset = offset;
 
 	return block;
 }
@@ -1898,6 +2001,11 @@ VariableValue Parser::getConstIniCore(Types * type)
 
 		if (type->toBasic()->isFloat)
 		{
+			if (!data->token.peek(0).isRealLiteral() && !data->token.peek(0).isIntLiteral())
+			{
+				addError(std::string("无效的初始化类型"));
+			}
+
 			VariableValue v;
 			v.buffer = new char[type->getSize()];
 			v.type = type;
@@ -1914,6 +2022,11 @@ VariableValue Parser::getConstIniCore(Types * type)
 		}
 		else
 		{
+			if (!data->token.peek(0).isRealLiteral() && !data->token.peek(0).isIntLiteral())
+			{
+				addError(std::string("无效的初始化类型"));
+			}
+
 			int size = type->getSize();
 			VariableValue v;
 			v.buffer = new char[size];
@@ -1921,7 +2034,18 @@ VariableValue Parser::getConstIniCore(Types * type)
 			long long t = std::atoll(data->token.read().getString().c_str());
 			auto basic = type->toBasic();
 
-			if (size== sizeof(short))
+			if (size == sizeof(char))
+			{
+				if (basic->isSigned)
+				{
+					*(char *)v.buffer = t;
+				}
+				else
+				{
+					*(unsigned char *)v.buffer = t;
+				}
+			}
+			else if (size== sizeof(short))
 			{
 				if (basic->isSigned)
 				{
@@ -1948,32 +2072,74 @@ VariableValue Parser::getConstIniCore(Types * type)
 			{
 				if (basic->isSigned)
 				{
-					*(int *)v.buffer = t;
+					*(long long *)v.buffer = t;
 				}
 				else
 				{
-					*(unsigned int *)v.buffer = t;
+					*(unsigned long long *)v.buffer = t;
 				}
 			}
 
 			return v;
 		}
+
+	}
+	else if (type->isPointer())
+	{
+		int size = type->getSize();
+		VariableValue v;
+		v.buffer = new char[size];
+		v.type = type;
+		auto ptr = type->toPointer();
+
+		if (ptr->targetType->isBasic() && ptr->targetType->getSize()==1&&data->token.peek(0).isStringLiteral())
+		{
+			const std::string &str=data->token.read().getString();
+			VariableValue vv;
+			vv.buffer = new char[str.size()+1];
+			memcpy(v.buffer, str.c_str(), str.size());
+			vv.buffer[str.size()] = 0;
+
+			ArrayRef arr = std::make_unique<ArrayType>();
+			arr->capacity = str.size() + 1;
+			BasicRef basic = std::make_unique<BasicType>();
+			basic->size = 1;
+			arr->dataType = basic.get();
+
+			*(char **)v.buffer = data->staticRegion.data + data->staticRegion.currentOffset;
+			data->staticRegion.addValue(vv);
+
+			vv.release();
+		}
+		else
+		{
+			long long t = std::atoll(data->token.read().getString().c_str());
+			*(unsigned int *)v.buffer = t;
+		}
+
+		return v;
 	}
 	else if(type->isArray())
 	{
+		auto arr = type->toArray();
 		VariableValue v;
 		v.buffer = new char[type->getSize()];
 		v.type = type;
 		memset(v.buffer, 0, type->getSize());
 		bool isBaracket = false;
-		
+
+		if (arr->dataType->isBasic() && arr->dataType->getSize() == 1 && data->token.peek(0).isStringLiteral())
+		{
+			const std::string &str = data->token.read().getString();
+			memcpy(v.buffer,str.c_str(),str.size());
+			return v;
+		}
+
 		if (data->token.peek(0).getString() == "{")
 		{
 			data->token.read();
 			isBaracket = true;
 		}
-
-		auto arr = type->toArray();
 
 		for (int i = 0; i < arr->capacity; ++i)
 		{

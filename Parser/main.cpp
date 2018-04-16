@@ -1,7 +1,6 @@
 #include "Parser.h"
 
 #include <iostream>
-#include <chrono>
 
 int main()
 {
