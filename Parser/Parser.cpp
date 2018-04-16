@@ -4,6 +4,7 @@
 #include "Types.h"
 #include "Custom.h"
 #include "FunctionDef.h"
+#include "AStree.h"
 
 #include <iostream>
 #include <memory>
@@ -36,6 +37,10 @@ struct variable
 
 struct symbol
 {
+	symbol()
+	{
+		isStatic = false;
+	}
 	bool isVariable;
 	bool isDefined;
 	bool isStatic;
@@ -107,8 +112,10 @@ struct Parser::Data
 	std::list<Token *> line;
 	std::vector<std::list<TypeToken>> origin;
 	std::vector<std::string>vName;
-	std::map<std::string,FunctionDefRef> allFunctions;
+	std::vector<FunctionDefRef> allFunctions;
 	std::list<TypeToken> argTokens;
+	FunctionDef *currentFunction;
+	char *stack;
 	ParseType type;
 	int currentLevel;
 	int index;
@@ -119,12 +126,16 @@ Parser::Parser()
 {
 	data = new Data;
 	Types::parser = this;
+	FunctionDef::parser = this;
+	AStree::parser = this;
+	//data->statck=new char[1024*1024*2];//2m的栈空间
 	createBaseType();
 }
 
 Parser::~Parser()
 {
 	delete data;
+	//delete[] stack;
 }
 
 void Parser::parse(const std::string &file)
@@ -1034,14 +1045,26 @@ void Parser::parseVariable()
 		{
 			if (isExtern)
 			{
-				auto it = data->symbols[0].find(v.name);
+				auto it = data->globalRegion.values.find(v.name);
 				/*首先检查符号表中是否已经有这个符号*/
-				if (it != data->symbols[0].end())
+
+				if (it != data->globalRegion.values.end())
 				{
-					if (it->second.isDefined || it->second.type != v.type)
+					if (it->second.isDefined || !it->second.type->equal(v.type))
 					{
 						addError(std::string("重定义的标识符"));
 					}
+
+					if (data->symbols[0].find(v.name) == data->symbols[0].end())
+					{
+						symbol t;
+						t.type = v.type;
+						t.isDefined = it->second.isDefined;
+						t.isVariable = true;
+						t.offSet = it->second.offSet;
+						data->symbols[0].insert(std::pair<std::string, symbol>(v.name, t));
+					}
+
 				}
 				else
 				{
@@ -1071,12 +1094,31 @@ void Parser::parseVariable()
 			else
 			{
 				int index = tp->isStatic ? 1 : 0;
+				Region *region;
+				if (tp->isStatic)
+				{
+					region = &data->staticRegion;
+				}
+				else
+				{
+					region = &data->globalRegion;
+				}
 
-				auto it = data->symbols[index].find(v.name);
+				auto it = region->values.find(v.name);
+
 				/*首先检查符号表中是否已经有这个符号*/
-				if (it != data->symbols[index].end())
+				if (it != region->values.end())
 				{
 					if (it->second.isDefined || !it->second.type->equal(v.type))
+					{
+						addError(std::string("重定义的标识符"));
+					}
+				}
+				
+				auto it2 = data->symbols[index].find(v.name);
+				if (it2 != data->symbols[index].end())
+				{
+					if (it2->second.isDefined || !it2->second.type->equal(v.type))
 					{
 						addError(std::string("重定义的标识符"));
 					}
@@ -1089,36 +1131,52 @@ void Parser::parseVariable()
 					memset(vv.buffer, 0, tp->getSize());
 				}
 
-				Region *region;
-				if (tp->isStatic)
-				{
-					region = &data->staticRegion;
-				}
-				else
-				{
-					region = &data->globalRegion;
-				}
-
-				symbol t;
-				t.type = v.type;
-				t.isDefined = true;
-				t.isVariable = true;
-				t.offSet = region->currentOffset;
-
-				Value val;
-				val.isDefined = true;
-				val.offSet = t.offSet;
-				val.type = t.type;
-
-				region->addValue(vv);
 				if (!tp->isStatic)
 				{
-					data->globalRegion.values.insert(std::pair<std::string, Value>(v.name, val));
-					data->symbols[0].insert(std::pair<std::string, symbol>(v.name, t));
+					symbol t;
+					t.type = v.type;
+					t.isDefined = true;
+					t.isVariable = true;
+					if (it != region->values.end())
+					{
+						t.offSet = it->second.offSet;
+					}
+					else
+					{
+						t.offSet = region->currentOffset;
+					}
+
+					Value val;
+					val.isDefined = true;
+					val.offSet = t.offSet;
+					val.type = t.type;
+
+					if (it != region->values.end())
+					{
+						memcpy(region->data + it->second.offSet, vv.buffer, vv.type->getSize());
+					}
+					else
+					{
+						region->addValue(vv);
+						region->values.insert(std::pair<std::string, Value>(v.name, val));
+					}
+
+					if (it2 == data->symbols[index].end())
+					{
+						data->symbols[index].insert(std::pair<std::string, symbol>(v.name, t));
+					}
+
 				}
 				else
 				{
-					data->symbols[1].insert(std::pair<std::string, symbol>(v.name, t));
+					symbol t;
+					t.type = v.type;
+					t.isDefined = true;
+					t.isVariable = true;
+					t.offSet = region->currentOffset;
+					region->addValue(vv);
+
+					data->symbols[index].insert(std::pair<std::string, symbol>(v.name, t));
 				}
 
 				vv.release();
@@ -1156,8 +1214,13 @@ void Parser::parseVariable()
 
 				if (isDef)
 				{
-					getFunctionDef(v.name, v.type);
-					region->values.find(v.name)->second.isDefined = true;
+					FunctionDef *fun = *(FunctionDef **)(region->data + it->second.offSet);
+					data->currentFunction = fun;
+					getFunctionDef();
+					if (!v.type->isStatic)
+					{
+						region->values.find(v.name)->second.isDefined = true;
+					}
 					return;
 				}
 
@@ -1171,27 +1234,34 @@ void Parser::parseVariable()
 				t.offSet = region->currentOffset;
 
 				Value val;
-				val.isDefined = true;
+				val.isDefined = false;
 				val.offSet = t.offSet;
 				val.type = t.type;
 
 				FunctionDefRef foo = std::make_unique<FunctionDef>();
 				FunctionDef *fptr = foo.get();
-				data->allFunctions.insert(std::pair<std::string, FunctionDefRef>(v.name, std::move(foo)));
+				data->allFunctions.push_back(std::move(foo));
 
 				region->values.insert(std::pair<std::string, Value>(v.name, val));
 				data->symbols[index].insert(std::pair<std::string, symbol>(v.name, t));
 
 				VariableValue vv;
 				vv.buffer = new char[sizeof(void *)];
+				*(FunctionDef **)vv.buffer = fptr;
+
 				vv.type = t.type;
 				region->addValue(vv);
 				vv.release();
 
 				if (isDef)
 				{
-					getFunctionDef(v.name, v.type);
-					region->values.find(v.name)->second.isDefined = true;
+					data->currentFunction = fptr;
+					getFunctionDef();
+					fptr->setType(v.type);
+					if (!v.type->isStatic)
+					{
+						region->values.find(v.name)->second.isDefined = true;
+					}
 					return;
 				}
 			}
@@ -1331,9 +1401,9 @@ void Parser::createBaseType()
 
 }
 
-void Parser::getFunctionDef(const std::string &name, Types * type)
+void Parser::getFunctionDef()
 {
-
+	data->currentFunction->setBlock(getBlock(data->currentFunction));
 }
 
 void Parser::getStructVariable(bool isStatic, bool isConst, Types * type, Types * constType)
@@ -1707,6 +1777,72 @@ void Parser::getEnumTypedef(bool isStatic, bool isConst, Types * type, Types * c
 	getStructTypedef(isStatic, isConst, type, constType, name);
 }
 
+AStreeRef Parser::getStatement(AStree * block)
+{
+	
+
+
+
+
+
+
+
+}
+
+AStreeRef Parser::getBlock(FunctionDef * fun, AStree * statement)
+{
+	++data->currentLevel;
+	if (data->symbols.size() < data->currentLevel)
+	{
+		data->symbols.resize(data->currentLevel);
+	}
+	data->symbols[data->currentLevel].clear();
+
+	if (statement != nullptr)
+	{
+
+	}
+	else if (fun != nullptr)
+	{
+		FunctionType *type = fun->getType()->toFunction();
+		int currentOffset = 0;
+
+		for (int i = 0; i < type->args.size();)
+		{
+			if (!type->args[i].empty()&&type->argsType[i])
+			{
+				symbol t;
+				t.isVariable = true;
+				t.isDefined = true;
+				t.offSet = currentOffset;
+				t.type = type->argsType[i];
+				data->symbols[data->currentLevel].insert(std::pair<std::string,symbol>(type->args[i],t));
+			}
+
+			if (type->getSize())
+			{
+				currentOffset += type->getSize();
+			}
+		}
+
+	}
+
+	requireToken("{");
+	AStreeRef block = std::make_unique<Block>();
+	Block *blk = block->toBlock();
+	blk->function = data->currentFunction;
+
+	while (data->token.peek(0).getString() != "}")
+	{
+		blk->statements.push_back(getStatement(blk));
+	}
+
+	requireToken("}");
+	--data->currentLevel;
+
+	return block;
+}
+
 StructDef * Parser::getStructDef(int index)
 {
 	return &data->allStructDef[index];
@@ -1941,7 +2077,7 @@ variable Parser::getVariables(Types *pre)
 	while (true)
 	{
 		auto str = data->token.peek(0).getString();
-		if (str == ";")
+		if (str == ";"||str=="{")
 		{
 			break;
 		}

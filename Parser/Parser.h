@@ -3,8 +3,11 @@
 #include <string>
 #include <vector>
 #include <list>
+#include <memory>
 
 class Types;
+class FunctionDef;
+class AStree;
 struct symbol;
 struct variable;
 struct VariableValue;
@@ -12,6 +15,8 @@ struct TypeToken;
 struct StructDef;
 struct UnionDef;
 struct EnumDef;
+
+using AStreeRef = std::unique_ptr<AStree>;
 
 class Parser
 {
@@ -28,13 +33,15 @@ public:
 	void addError(std::string &info);
 	void requireToken(const std::string &token);
 	void createBaseType();
-	void getFunctionDef(const std::string &name,Types *type);
+	void getFunctionDef();
 	void getStructVariable(bool isStatic,bool isConst,Types *type,Types *constType);
 	void getStructTypedef(bool isStatic, bool isConst, Types *type, Types *constType,std::string &name);
 	void getUnionVariable(bool isStatic, bool isConst, Types *type, Types *constType);
 	void getUnionTypedef(bool isStatic, bool isConst, Types *type, Types *constType, std::string &name);
 	void getEnumVariable(bool isStatic, bool isConst, Types *type, Types *constType);
 	void getEnumTypedef(bool isStatic, bool isConst, Types *type, Types *constType, std::string &name);
+	AStreeRef getStatement(AStree *block);
+	AStreeRef getBlock(FunctionDef *fun=nullptr,AStree *statement=nullptr);
 	StructDef *getStructDef(int index);
 	UnionDef *getUnionDef(int index);
 	EnumDef *getEnumDef(int index);
