@@ -15,6 +15,8 @@ public:
 	~FunctionDef();
 	void setBlock(AStreeRef &ast);
 	void setType(Types *tp);
+	bool isReturned();
+	void setReturned();
 	Types *getType();
 public:
 	static Parser *parser;

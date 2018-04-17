@@ -8,11 +8,13 @@ struct FunctionDef::Data
 {
 	Types *type;
 	AStreeRef block;
+	bool isReturn;
 };
 
 FunctionDef::FunctionDef()
 {
 	data = new Data;
+	data->isReturn = false;
 }
 
 FunctionDef::~FunctionDef()
@@ -28,6 +30,16 @@ void FunctionDef::setBlock(AStreeRef & ast)
 void FunctionDef::setType(Types * tp)
 {
 	data->type = tp;
+}
+
+bool FunctionDef::isReturned()
+{
+	return data->isReturn;
+}
+
+void FunctionDef::setReturned()
+{
+	data->isReturn = true;
 }
 
 Types * FunctionDef::getType()

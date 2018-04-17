@@ -43,6 +43,7 @@ public:
 	AStreeRef getStatement(AStree *block);
 	AStreeRef getVariableDefState(AStree *block);
 	AStreeRef getExprState(AStree *block);
+	AStreeRef getExpr(AStree *block);
 	AStreeRef getSwitchState(AStree *block);
 	AStreeRef getIfState(AStree *block);
 	AStreeRef getWhileState(AStree *block);

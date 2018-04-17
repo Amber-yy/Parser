@@ -1832,6 +1832,13 @@ AStreeRef Parser::getVariableDefState(AStree * block)
 
 AStreeRef Parser::getExprState(AStree * block)
 {
+	AStreeRef expr = getExpr(block);
+	requireToken(";");
+	return expr;
+}
+
+AStreeRef Parser::getExpr(AStree * block)
+{
 	return AStreeRef();
 }
 
@@ -1842,23 +1849,85 @@ AStreeRef Parser::getSwitchState(AStree * block)
 
 AStreeRef Parser::getIfState(AStree * block)
 {
-	AStreeRef rs = std::make_unique<ReturnState>();
+	requireToken("if");
+	AStreeRef rs = std::make_unique<IfState>();
 	rs->function = data->currentFunction;
 	rs->block = block;
+	IfState *ifs = rs->toIfState();
+	
+	requireToken("(");
+	AStreeRef con = getExpr(block);
+	Types *tp = con->getType();
+	if (tp == nullptr || (!tp->isBasic() && !tp->isPointer()))
+	{
+		addError(std::string("表达式必须为bool类型"));
+	}
+	requireToken(")");
 
+	ifs->condition = std::move(con);
+	ifs->conTrue = getExpr(block);
+	if (data->token.peek(0).getString() == "else")
+	{
+		data->token.read();
+		ifs->conFalse = getExpr(block);
+	}
 
-
-
+	return rs;
 }
 
 AStreeRef Parser::getWhileState(AStree * block)
 {
-	return AStreeRef();
+	requireToken("while");
+	AStreeRef rs = std::make_unique<WhileState>();
+	rs->function = data->currentFunction;
+	rs->block = block;
+	WhileState *ws = rs->toWhileState();
+
+	requireToken("(");
+	AStreeRef con = getExpr(block);
+	Types *tp = con->getType();
+	if (tp == nullptr || (!tp->isBasic() && !tp->isPointer()))
+	{
+		addError(std::string("表达式必须为bool类型"));
+	}
+	requireToken(")");
+
+	ws->condition = std::move(con);
+	ws->state = getStatement(block);
+	if (ws->state->isBlock())
+	{
+		ws->state->toBlock()->type = LoopBlock;
+	}
+
+	return rs;
 }
 
 AStreeRef Parser::getDoWhileState(AStree * block)
 {
-	return AStreeRef();
+	requireToken("do");
+	AStreeRef rs = std::make_unique<DoWhileState>();
+	rs->function = data->currentFunction;
+	rs->block = block;
+	DoWhileState *ws = rs->toDoWhileState();
+
+	ws->state = getStatement(block);
+	if (ws->state->isBlock())
+	{
+		ws->state->toBlock()->type = LoopBlock;
+	}
+
+	requireToken("(");
+	AStreeRef con = getExpr(block);
+	Types *tp = con->getType();
+	if (tp == nullptr || (!tp->isBasic() && !tp->isPointer()))
+	{
+		addError(std::string("表达式必须为bool类型"));
+	}
+	requireToken(")");
+	requireToken(";");
+
+	ws->condition = std::move(con);
+	return rs;
 }
 
 AStreeRef Parser::getForState(AStree * block)
@@ -1868,11 +1937,39 @@ AStreeRef Parser::getForState(AStree * block)
 
 AStreeRef Parser::getBreakState(AStree * block)
 {
-	return AStreeRef();
+	requireToken("break");
+	requireToken(";");
+
+	AStreeRef rs = std::make_unique<DoWhileState>();
+	rs->function = data->currentFunction;
+	rs->block = block;
+
+	Block *loop = nullptr;
+	AStree *temp = block;
+
+	while (temp)
+	{
+		Block *q = temp->toBlock();
+		if (q->type == LoopBlock||q->type==SwitchBlock)
+		{
+			loop = q;
+			break;
+		}
+
+		temp = temp->block;
+	}
+
+	if (loop == nullptr)
+	{
+		addError(std::string("break语句只能在循环或者switch语句中"));
+	}
+
+	return rs;
 }
 
 AStreeRef Parser::getReturnState(AStree * block)
 {
+	requireToken("return");
 	FunctionType *tp = data->currentFunction->getType()->toFunction();
 	
 	AStreeRef rs = std::make_unique<ReturnState>();
