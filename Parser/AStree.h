@@ -13,6 +13,8 @@ class WhileState;
 class DoWhileState;
 class BreakState;
 class SwitchState;
+class ForState;
+class VariableDefState;
 
 enum BlockType
 {
@@ -43,7 +45,11 @@ public:
 	virtual bool isDoWhileState();
 	virtual bool isBreakState();
 	virtual bool isSwitchState();
+	virtual bool isForState();
+	virtual bool isVariableDefState();
 	bool parseCondition(Result t);
+	VariableDefState *toVariableDefState();
+	ForState *toForState();
 	SwitchState *toSwitchState();
 	BreakState *toBreakState();
 	DoWhileState *toDoWhileState();
@@ -53,6 +59,7 @@ public:
 	Block *toBlock();
 public:
 	bool isBreak;
+	BlockType type;
 	FunctionDef *function;
 	AStree *block;
 public:
@@ -69,7 +76,6 @@ public:
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
 	virtual bool isBlock()override;
-	BlockType type;
 	std::vector<AStreeRef> statements;
 };
 
@@ -133,6 +139,29 @@ public:
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
 	virtual bool isSwitchState()override;
-	AStreeRef condition;
-	std::vector<AStreeRef> state;
+	AStreeRef target;
+	std::vector<AStreeRef> conditions;
+	std::vector<std::vector<AStreeRef>> states;
+};
+
+class ForState :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isForState()override;
+	AStreeRef ini;
+	AStreeRef con;
+	AStreeRef after;
+	AStreeRef state;
+};
+
+class VariableDefState :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isVariableDefState()override;
 };

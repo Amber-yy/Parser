@@ -1844,7 +1844,84 @@ AStreeRef Parser::getExpr(AStree * block)
 
 AStreeRef Parser::getSwitchState(AStree * block)
 {
-	return AStreeRef();
+	int offset = data->currentOffset;
+	++data->currentLevel;
+	if (data->symbols.size() < data->currentLevel)
+	{
+		data->symbols.resize(data->currentLevel);
+	}
+	data->symbols[data->currentLevel].clear();
+
+	AStreeRef rs = std::make_unique<SwitchState>();
+	rs->function = data->currentFunction;
+	rs->block = block;
+	SwitchState *sw = rs->toSwitchState();
+
+	requireToken("switch");
+	requireToken("(");
+	sw->target = getExpr(block);
+	requireToken(")");
+	requireToken("{");
+
+	Types *tp = sw->target->getType();
+
+	bool isDefault = false;
+
+	while (data->token.peek(0).getString() != "}")
+	{
+		bool def = false;
+
+		if (data->token.peek(0).getString()=="default")
+		{
+			if (isDefault)
+			{
+				addError(std::string("switch语句中已经出现了default"));
+			}
+			isDefault = true;
+			def = true;
+		}
+
+		if (def)
+		{
+			requireToken("default");
+			requireToken(":");
+
+			sw->conditions.push_back(nullptr);
+		}
+		else
+		{
+			requireToken("case");
+			AStreeRef t = getExpr(sw);
+			if (!t->getType()->equal(tp))
+			{
+				addError(std::string("case后的表达式类型与switch不符"));
+			}
+
+			sw->conditions.push_back(t);
+		}
+
+		sw->states.push_back(std::vector<AStreeRef>());
+
+		int index = sw->states.size() - 1;
+
+		while (true)
+		{
+			const std::string &t = data->token.peek(0).getString();
+			if (t == "default" || t == "case" || t == "}")
+			{
+				break;
+			}
+
+			sw->states[index].push_back(getStatement(sw));
+		}
+
+	}
+
+	requireToken("}");
+	--data->currentLevel;
+	data->currentOffset = offset;
+
+	return rs;
 }
 
 AStreeRef Parser::getIfState(AStree * block)
@@ -1916,6 +1993,7 @@ AStreeRef Parser::getDoWhileState(AStree * block)
 		ws->state->toBlock()->type = LoopBlock;
 	}
 
+	requireToken("while");
 	requireToken("(");
 	AStreeRef con = getExpr(block);
 	Types *tp = con->getType();
@@ -1932,6 +2010,48 @@ AStreeRef Parser::getDoWhileState(AStree * block)
 
 AStreeRef Parser::getForState(AStree * block)
 {
+	int offset = data->currentOffset;
+	++data->currentLevel;
+	if (data->symbols.size() < data->currentLevel)
+	{
+		data->symbols.resize(data->currentLevel);
+	}
+	data->symbols[data->currentLevel].clear();
+
+	AStreeRef rs = std::make_unique<ForState>();
+	rs->function = data->currentFunction;
+	rs->block = block;
+	ForState *f = rs->toForState();
+
+	requireToken("for");
+	requireToken("(");
+	
+	if (data->token.peek(0).isKeyWord() || !findSymbol(data->token.peek(0).getString())->isVariable)
+	{
+		f->ini = getVariableDefState(block);
+	}
+	else
+	{
+		f->ini = getExprState(block);
+	}
+
+	f->con = getExprState(block);
+	Types *tp = f->con->getType();
+	if (tp == nullptr || (!tp->isBasic() && !tp->isPointer()))
+	{
+		addError(std::string("表达式必须为bool类型"));
+	}
+	f->after = getExprState(block);
+	requireToken(")");
+
+	f->state = getStatement(block);
+	if (f->state->isBlock())
+	{
+		f->state->toBlock()->type = LoopBlock;
+	}
+
+	data->currentOffset = offset;
+	--data->currentLevel;
 	return AStreeRef();
 }
 
@@ -1944,15 +2064,14 @@ AStreeRef Parser::getBreakState(AStree * block)
 	rs->function = data->currentFunction;
 	rs->block = block;
 
-	Block *loop = nullptr;
+	AStree *loop = nullptr;
 	AStree *temp = block;
 
 	while (temp)
 	{
-		Block *q = temp->toBlock();
-		if (q->type == LoopBlock||q->type==SwitchBlock)
+		if (temp->type == LoopBlock||temp->type==SwitchBlock)
 		{
-			loop = q;
+			loop = temp;
 			break;
 		}
 
@@ -1990,16 +2109,11 @@ AStreeRef Parser::getReturnState(AStree * block)
 AStreeRef Parser::getBlock(FunctionDef * fun, AStree * statement)
 {
 	int offset = data->currentOffset;
-	++data->currentLevel;
-	if (data->symbols.size() < data->currentLevel)
-	{
-		data->symbols.resize(data->currentLevel);
-	}
-	data->symbols[data->currentLevel].clear();
+	bool ok = true;
 
 	if (statement != nullptr)
 	{
-		//forstate
+		ok = false;
 	}
 	else if (fun != nullptr)
 	{
@@ -2026,6 +2140,16 @@ AStreeRef Parser::getBlock(FunctionDef * fun, AStree * statement)
 
 	}
 
+	if (ok)
+	{
+		++data->currentLevel;
+		if (data->symbols.size() < data->currentLevel)
+		{
+			data->symbols.resize(data->currentLevel);
+		}
+		data->symbols[data->currentLevel].clear();
+	}
+
 	requireToken("{");
 	AStreeRef block = std::make_unique<Block>();
 	Block *blk = block->toBlock();
@@ -2037,7 +2161,10 @@ AStreeRef Parser::getBlock(FunctionDef * fun, AStree * statement)
 	}
 
 	requireToken("}");
-	--data->currentLevel;
+	if (ok)
+	{
+		--data->currentLevel;
+	}
 	data->currentOffset = offset;
 
 	return block;

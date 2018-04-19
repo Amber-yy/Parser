@@ -8,6 +8,7 @@ Parser * AStree::parser;
 AStree::AStree()
 {
 	block = nullptr;
+	type = StateBlock;
 }
 
 AStree::~AStree()
@@ -50,6 +51,16 @@ bool AStree::isSwitchState()
 	return false;
 }
 
+bool AStree::isForState()
+{
+	return false;
+}
+
+bool AStree::isVariableDefState()
+{
+	return false;
+}
+
 bool AStree::parseCondition(Result res)
 {
 	char *data = (char *)res.value + res.offset;
@@ -63,6 +74,16 @@ bool AStree::parseCondition(Result res)
 	}
 
 	return false;
+}
+
+VariableDefState * AStree::toVariableDefState()
+{
+	return dynamic_cast<VariableDefState *>(this);
+}
+
+ForState * AStree::toForState()
+{
+	return dynamic_cast<ForState *>(this);
 }
 
 SwitchState * AStree::toSwitchState()
@@ -112,15 +133,14 @@ Types * Block::getType()
 
 Result Block::eval()
 {
-	Block *loop=nullptr;
+	AStree *loop=nullptr;
 	AStree *temp = block;
 
 	while (temp)
 	{
-		Block *q = temp->toBlock();
-		if (q->type == LoopBlock|| q->type == SwitchBlock)
+		if (temp->type == LoopBlock|| temp->type == SwitchBlock)
 		{
-			loop = q;
+			loop = temp;
 			break;
 		}
 
@@ -215,9 +235,13 @@ Types * WhileState::getType()
 
 Result WhileState::eval()
 {
+	if (state->isBreakState())
+	{
+		return Result();
+	}
 	isBreak = false;
 
-	while (parseCondition(condition->eval())&&!isBreak&&!function->isReturned())
+	while (!isBreak && !function->isReturned()&&parseCondition(condition->eval()))
 	{
 		state->eval();
 	}
@@ -242,12 +266,17 @@ Types * DoWhileState::getType()
 
 Result DoWhileState::eval()
 {
+	if (state->isBreakState())
+	{
+		return Result();
+	}
+
 	isBreak = false;
 
 	do
 	{
 		state->eval();
-	}while (parseCondition(condition->eval())&&!isBreak&&!function->isReturned());
+	}while (!isBreak && !function->isReturned()&&parseCondition(condition->eval()));
 
 	return Result();
 }
@@ -269,15 +298,14 @@ Types * BreakState::getType()
 
 Result BreakState::eval()
 {
-	Block *loop = nullptr;
+	AStree *loop = nullptr;
 	AStree *temp = block;
 
 	while (temp)
 	{
-		Block *q = temp->toBlock();
-		if (q->type == LoopBlock|| q->type == SwitchBlock)
+		if (temp->type == LoopBlock|| temp->type == SwitchBlock)
 		{
-			loop = q;
+			loop = temp;
 			break;
 		}
 
@@ -293,6 +321,134 @@ bool BreakState::isLeftValue()
 }
 
 bool BreakState::isBreakState()
+{
+	return true;
+}
+
+Types * SwitchState::getType()
+{
+	return nullptr;
+}
+
+Result SwitchState::eval()
+{
+	Result v=target->eval();
+	char *buffer = new char[v.type->getSize()];
+	char *test = new char[v.type->getSize()];
+	memcpy(buffer, (char *)v.value+v.offset, v.type->getSize());
+
+	int startIndex = -1;
+	int defaultIndex = -1;
+
+	for (int i = 0; i < conditions.size(); ++i)
+	{
+		if (!conditions[i])
+		{
+			defaultIndex = i;
+		}
+		else
+		{
+			Result s = conditions[i]->eval();
+			memcpy(buffer, (char *)s.value + s.offset, s.type->getSize());
+
+			if (memcmp(buffer, test, s.type->getSize()) == 0)
+			{
+				startIndex = i;
+				break;
+			}
+		}
+	}
+
+	if (startIndex == -1 && defaultIndex != -1)
+	{
+		startIndex = defaultIndex;
+	}
+
+	if (startIndex != -1)
+	{
+		for (int i = startIndex; i < conditions.size(); ++i)
+		{
+			for (int j = 0; j < states[i].size(); ++j)
+			{
+				states[i][j]->eval();
+				if (isBreak || function->isReturned())
+				{
+					break;
+				}
+			}
+
+			if (isBreak||function->isReturned())
+			{
+				break;
+			}
+		}
+	}
+
+	delete test;
+	delete buffer;
+	return Result();
+}
+
+bool SwitchState::isLeftValue()
+{
+	return false;
+}
+
+bool SwitchState::isSwitchState()
+{
+	return true;
+}
+
+Types * ForState::getType()
+{
+	return nullptr;
+}
+
+Result ForState::eval()
+{
+	if (state->isBreakState())
+	{
+		return Result();
+	}
+
+	for (ini->eval();parseCondition(con->eval());after->eval())
+	{
+		state->eval();
+		if (isBreak || function->isReturned())
+		{
+			break;
+		}
+	}
+
+	return Result();
+}
+
+bool ForState::isLeftValue()
+{
+	return false;
+}
+
+bool ForState::isForState()
+{
+	return true;
+}
+
+Types * VariableDefState::getType()
+{
+	return nullptr;
+}
+
+Result VariableDefState::eval()
+{
+	return Result();
+}
+
+bool VariableDefState::isLeftValue()
+{
+	return false;
+}
+
+bool VariableDefState::isVariableDefState()
 {
 	return true;
 }
