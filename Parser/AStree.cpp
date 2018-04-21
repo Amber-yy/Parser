@@ -76,6 +76,11 @@ bool AStree::parseCondition(Result res)
 	return false;
 }
 
+Value AStree::cast(Result t, Types * target)
+{
+	return Value();
+}
+
 VariableDefState * AStree::toVariableDefState()
 {
 	return dynamic_cast<VariableDefState *>(this);
@@ -433,6 +438,11 @@ bool ForState::isForState()
 	return true;
 }
 
+VariableDefState::VariableDefState()
+{
+	isInied = false;
+}
+
 Types * VariableDefState::getType()
 {
 	return nullptr;
@@ -440,6 +450,15 @@ Types * VariableDefState::getType()
 
 Result VariableDefState::eval()
 {
+	if (isInied&&id->getType()->isStatic)
+	{
+		return Result();
+	}
+
+	Value v= value->eval();
+	Result t = id->eval();
+	memcpy((char *)t.value + t.offset, v.buffer,t.type->getSize());
+	v.release();
 	return Result();
 }
 
@@ -451,4 +470,42 @@ bool VariableDefState::isLeftValue()
 bool VariableDefState::isVariableDefState()
 {
 	return true;
+}
+
+Value IniList::eval()
+{	
+	if (nexts.size() == 0)
+	{
+		Result t = expr->eval();
+		return AStree::cast(t, type);
+	}
+
+	Value v;
+	v.type = type;
+	v.buffer = new char[type->getSize()];
+	memset(v.buffer, 0, type->getSize());
+
+	for (int i = 0; i < nexts.size(); ++i)
+	{
+		Value t = nexts[i]->eval();
+		memcpy(v.buffer + offset[i], t.buffer,nexts[i]->type->getSize());
+		v.release();
+	}
+
+	return v;
+}
+
+Types * Id::getType()
+{
+	return nullptr;
+}
+
+Result Id::eval()
+{
+	return Result();
+}
+
+bool Id::isLeftValue()
+{
+	return false;
 }

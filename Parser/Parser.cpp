@@ -1827,7 +1827,28 @@ AStreeRef Parser::getStatement(AStree * block)
 
 AStreeRef Parser::getVariableDefState(AStree * block)
 {
-	return AStreeRef();
+	Types *tp = peekType();
+	variable v = getVariables(tp);
+
+	symbol t;
+	t.offSet = data->currentOffset;
+	t.isDefined = true;
+	t.isVariable = true;
+	t.isStatic = tp->isStatic;
+	t.type = tp;
+
+	data->symbols[data->currentLevel].insert(std::pair<std::string,symbol>(v.name,t));
+
+	AStreeRef rs = std::make_unique<VariableDefState>();
+	rs->function = data->currentFunction;
+	rs->block = block;
+	VariableDefState *vds = rs->toVariableDefState();
+
+	//vds->id
+
+	vds->value = getIni(t.type, block);
+
+	return rs;
 }
 
 AStreeRef Parser::getExprState(AStree * block)
@@ -1837,7 +1858,7 @@ AStreeRef Parser::getExprState(AStree * block)
 	return expr;
 }
 
-AStreeRef Parser::getExpr(AStree * block)
+AStreeRef Parser::getExpr(AStree * block,bool comma)
 {
 	return AStreeRef();
 }
@@ -2104,6 +2125,11 @@ AStreeRef Parser::getReturnState(AStree * block)
 	r->expr = getExprState(block);
 
 	return rs;
+}
+
+AStreeRef Parser::getStringLiteral(AStree * block)
+{
+	return AStreeRef();
 }
 
 AStreeRef Parser::getBlock(FunctionDef * fun, AStree * statement)
@@ -2447,6 +2473,174 @@ VariableValue Parser::getConstIniCore(Types * type)
 	}
 
 	addError(std::string("错误的初始化方式"));
+}
+
+IniRef Parser::getIni(Types * type,AStree *block)
+{
+	if (data->token.peek(0).getString() != "=")
+	{
+		IniRef t=std::make_unique<IniList>();
+		t->type = type;
+		return t;
+	}
+
+	data->token.read();
+
+	bool isBaracket = false;
+
+	if (type->isArray() || type->isStruct() || type->isUnion())
+	{
+		isBaracket = true;
+	}
+
+	if (isBaracket)
+	{
+		requireToken("{");
+	}
+
+	IniRef v = getIniCore(type,block);
+
+	if (isBaracket)
+	{
+		requireToken("}");
+	}
+
+	return v;
+}
+
+IniRef Parser::getIniCore(Types * type,AStree *block)
+{
+	if (type->isBasic())
+	{
+		IniRef t = std::make_unique<IniList>();
+		t->expr = getExpr(block, false);
+		if (!t->expr->getType()->compatible(type))
+		{
+			addError(std::string("不兼容的类型"));
+		}
+		return t;
+	}
+	else if (type->isPointer())
+	{
+		auto ptr = type->toPointer();
+		IniRef t = std::make_unique<IniList>();
+
+		if (ptr->targetType->isBasic() && ptr->targetType->getSize() == 1 && data->token.peek(0).isStringLiteral())
+		{
+			t->expr = getStringLiteral(block);
+			return t;
+		}
+
+		t->expr = getExpr(block, false);
+		if (!t->expr->getType()->compatible(type))
+		{
+			addError(std::string("不兼容的类型"));
+		}
+
+	}
+	else if (type->isArray())
+	{
+		auto arr = type->toArray();
+		IniRef t = std::make_unique<IniList>();
+
+		if (arr->dataType->isBasic() && arr->dataType->getSize() == 1 && data->token.peek(0).isStringLiteral())
+		{
+			t->expr = getStringLiteral(block);
+			return t;
+		}
+
+		bool isBaracket = false;
+
+		if (data->token.peek(0).getString() == "{")
+		{
+			isBaracket = true;
+		}
+
+		if (isBaracket)
+		{
+			requireToken("{");
+		}
+
+		int offset = 0;
+
+		for (int i = 0; i < arr->capacity; ++i)
+		{
+			t->nexts.push_back(getIniCore(arr->dataType,block));
+			t->offset.push_back(offset);
+			offset += arr->dataType->getSize();
+			if (data->token.peek(0).getString() == "}")
+			{
+				break;
+			}
+
+			requireToken(",");
+		}
+
+		if (isBaracket)
+		{
+			requireToken("}");
+		}
+	}
+	else if (type->isStruct())
+	{
+		auto str = type->toStruct();
+		IniRef t = std::make_unique<IniList>();
+		bool isBaracket = false;
+
+		if (data->token.peek(0).getString() == "{")
+		{
+			isBaracket = true;
+		}
+
+		if (isBaracket)
+		{
+			requireToken("{");
+		}
+
+		auto &strdef = data->allStructDef[str->structDef];
+		int offset = 0;
+		for (int i = 0; i <strdef.types.size(); ++i)
+		{
+			t->nexts.push_back(getIniCore(strdef.types[i],block));
+			t->offset.push_back(offset);
+			offset += strdef.types[i]->getSize();
+			if (data->token.peek(0).getString() == "}")
+			{
+				break;
+			}
+
+			requireToken(",");
+		}
+
+		if (isBaracket)
+		{
+			requireToken("}");
+		}
+
+		return t;
+	}
+	else if (type->isUnion())
+	{
+		auto uni = type->toUnion();
+		int index = -1, max = -1;
+
+		auto &unidef = data->allStructDef[uni->unionDef];
+
+		for (int i = 0; i < unidef.types.size(); ++i)
+		{
+			if (unidef.types[i]->getSize() > max)
+			{
+				max = unidef.types[i]->getSize();
+				index = i;
+			}
+		}
+
+		return getIniCore(unidef.types[index],block);
+	}
+
+	addError(std::string("错误的初始化方式"));
+
+	return IniRef();
 }
 
 variable Parser::getVariables(Types *pre)

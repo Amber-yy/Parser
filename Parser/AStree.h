@@ -30,8 +30,20 @@ struct Result
 	int offset;
 };
 
+struct Value
+{
+	void release()
+	{
+		delete[]buffer;
+	}
+	char *buffer;
+	Types *type;
+};
+
 class AStree
 {
+public:
+	static Value cast(Result t, Types *target);
 public:
 	AStree();
 	~AStree();
@@ -67,6 +79,18 @@ public:
 };
 
 using AStreeRef = std::unique_ptr<AStree>;
+
+struct IniList;
+using IniRef= std::unique_ptr<IniList>;
+
+struct IniList
+{
+	Value eval();
+	AStreeRef expr;
+	std::vector<IniRef> nexts;
+	std::vector<int> offset;
+	Types *type;
+};
 
 class Block :public AStree
 {
@@ -160,8 +184,26 @@ public:
 class VariableDefState :public AStree
 {
 public:
+	VariableDefState();
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
 	virtual bool isVariableDefState()override;
+	AStreeRef id;
+	IniRef value;
+	bool isInied;
+};
+
+class Id :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	Types *type;
+};
+
+class StringLiteral :public AStree
+{
+
 };

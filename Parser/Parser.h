@@ -11,6 +11,7 @@ class AStree;
 struct symbol;
 struct variable;
 struct VariableValue;
+struct IniList;
 struct TypeToken;
 struct StructDef;
 struct UnionDef;
@@ -43,7 +44,7 @@ public:
 	AStreeRef getStatement(AStree *block);
 	AStreeRef getVariableDefState(AStree *block);
 	AStreeRef getExprState(AStree *block);
-	AStreeRef getExpr(AStree *block);
+	AStreeRef getExpr(AStree *block,bool comma=true);
 	AStreeRef getSwitchState(AStree *block);
 	AStreeRef getIfState(AStree *block);
 	AStreeRef getWhileState(AStree *block);
@@ -51,6 +52,7 @@ public:
 	AStreeRef getForState(AStree *block);
 	AStreeRef getBreakState(AStree *block);
 	AStreeRef getReturnState(AStree *block);
+	AStreeRef getStringLiteral(AStree *block);
 	AStreeRef getBlock(FunctionDef *fun=nullptr,AStree *statement=nullptr);
 	StructDef *getStructDef(int index);
 	UnionDef *getUnionDef(int index);
@@ -58,6 +60,8 @@ public:
 	Types *parseType(Types *pre,std::list<TypeToken> &tokens,int name,int level);//0表示需要变量名，1表示刚刚有名字，2表示不能有
 	VariableValue getConstIni(Types *type);
 	VariableValue getConstIniCore(Types *type);
+	IniRef getIni(Types *type, AStree *block);
+	IniRef getIniCore(Types *type, AStree *block);
 	variable getVariables(Types *pre);
 	symbol *findSymbol(const std::string &name);
 	Types *peekType(bool args=false);

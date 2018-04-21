@@ -282,6 +282,10 @@ bool PointerType::equal(Types * tp)
 
 bool PointerType::compatible(Types * tp)
 {
+	if (tp->isBasic() && !tp->toBasic()->isFloat)
+	{
+		return true;
+	}
 	if (!tp->isPointer())
 	{
 		return false;
