@@ -15,12 +15,21 @@ class BreakState;
 class SwitchState;
 class ForState;
 class VariableDefState;
+class IdExpr;
 
 enum BlockType
 {
 	StateBlock,
 	SwitchBlock,
 	LoopBlock
+};
+
+enum VariableRegion
+{
+	GlobalVariable,
+	StaticVariable,
+	Arg,
+	Local
 };
 
 struct Result
@@ -30,7 +39,7 @@ struct Result
 	int offset;
 };
 
-struct Value
+struct EvalValue
 {
 	void release()
 	{
@@ -43,7 +52,7 @@ struct Value
 class AStree
 {
 public:
-	static Value cast(Result t, Types *target);
+	static EvalValue cast(Result t, Types *target);
 public:
 	AStree();
 	~AStree();
@@ -59,7 +68,9 @@ public:
 	virtual bool isSwitchState();
 	virtual bool isForState();
 	virtual bool isVariableDefState();
+	virtual bool isIdExpr();
 	bool parseCondition(Result t);
+	IdExpr *toIdExpr();
 	VariableDefState *toVariableDefState();
 	ForState *toForState();
 	SwitchState *toSwitchState();
@@ -85,7 +96,7 @@ using IniRef= std::unique_ptr<IniList>;
 
 struct IniList
 {
-	Value eval();
+	EvalValue eval();
 	AStreeRef expr;
 	std::vector<IniRef> nexts;
 	std::vector<int> offset;
@@ -194,13 +205,15 @@ public:
 	bool isInied;
 };
 
-class Id :public AStree
+class IdExpr :public AStree
 {
 public:
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
 	Types *type;
+	VariableRegion reg;
+	int offset;
 };
 
 class StringLiteral :public AStree

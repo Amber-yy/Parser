@@ -3,6 +3,56 @@
 #include "FunctionDef.h"
 #include "Types.h"
 
+char getChar(Result t)
+{
+	return *((char*)(t.value) + t.offset);
+}
+
+unsigned char getUchar(Result t)
+{
+	return *((unsigned char*)(t.value) + t.offset);
+}
+
+short getShort(Result t)
+{
+	return *((short*)(t.value) + t.offset);
+}
+
+unsigned short getUShort(Result t)
+{
+	return *((unsigned short*)(t.value) + t.offset);
+}
+
+int getInt(Result t)
+{
+	return *((int*)(t.value) + t.offset);
+}
+
+unsigned int getUInt(Result t)
+{
+	return *((unsigned int*)(t.value) + t.offset);
+}
+
+long long getLong(Result t)
+{
+	return *((long long*)(t.value) + t.offset);
+}
+
+long long getULong(Result t)
+{
+	return *((unsigned long long*)(t.value) + t.offset);
+}
+
+float getFloat(Result t)
+{
+	return *((float*)(t.value) + t.offset);
+}
+
+double getDouble(Result t)
+{
+	return *((double*)(t.value) + t.offset);
+}
+
 Parser * AStree::parser;
 
 AStree::AStree()
@@ -61,6 +111,11 @@ bool AStree::isVariableDefState()
 	return false;
 }
 
+bool AStree::isIdExpr()
+{
+	return false;
+}
+
 bool AStree::parseCondition(Result res)
 {
 	char *data = (char *)res.value + res.offset;
@@ -76,9 +131,272 @@ bool AStree::parseCondition(Result res)
 	return false;
 }
 
-Value AStree::cast(Result t, Types * target)
+IdExpr * AStree::toIdExpr()
 {
-	return Value();
+	return dynamic_cast<IdExpr *>(this);
+}
+
+template<class T>
+void doCast(EvalValue v,Result t,BasicType *bs)
+{
+	if (bs->isFloat)
+	{
+		if (bs->size == 4)
+		{
+			*(T *)v.buffer = getFloat(t);
+		}
+		else
+		{
+			*(T *)v.buffer = getDouble(t);
+		}
+	}
+	else
+	{
+		if (bs->size == 1)
+		{
+			if (bs->isSigned)
+			{
+				*(T *)v.buffer = getChar(t);
+			}
+			else
+			{
+				*(float *)v.buffer = getUchar(t);
+			}
+		}
+		else if (bs->size == 2)
+		{
+			if (bs->isSigned)
+			{
+				*(T *)v.buffer = getShort(t);
+			}
+			else
+			{
+				*(T *)v.buffer = getUShort(t);
+			}
+		}
+		else if (bs->size == 4)
+		{
+			if (bs->isSigned)
+			{
+				*(T *)v.buffer = getInt(t);
+			}
+			else
+			{
+				*(T *)v.buffer = getUInt(t);
+			}
+		}
+		else if (bs->size == 8)
+		{
+			if (bs->isSigned)
+			{
+				*(T *)v.buffer = getLong(t);
+			}
+			else
+			{
+				*(T *)v.buffer = getULong(t);
+			}
+		}
+	}
+}
+
+EvalValue AStree::cast(Result t, Types * target)
+{
+	EvalValue v;
+	v.buffer = new char[target->getSize()];
+	v.type = target;
+	
+	void *pos = (char *)t.value + t.offset;
+
+	if (target->isBasic())
+	{
+		BasicType *bs = t.type->toBasic();
+		BasicType *bt = target->toBasic();
+
+		if (bt->isFloat)
+		{
+			if (bt->size == 4)
+			{
+				doCast<float>(v,t,bs);
+			}
+			else
+			{
+				doCast<double>(v, t, bs);
+			}
+		}
+		else
+		{
+			if (bt->size == 1)
+			{
+				if (bt->isSigned)
+				{
+					doCast<char>(v, t, bs);
+				}
+				else
+				{
+					doCast<unsigned char>(v, t, bs);
+				}
+			}
+			else if (bt->size == 2)
+			{
+				if (bt->isSigned)
+				{
+					doCast<short>(v, t, bs);
+				}
+				else
+				{
+					doCast<unsigned short>(v, t, bs);
+				}
+			}
+			else if (bt->size == 4)
+			{
+				if (bt->isSigned)
+				{
+					doCast<int>(v, t, bs);
+				}
+				else
+				{
+					doCast<unsigned int>(v, t, bs);
+				}
+			}
+			else if (bt->size == 8)
+			{
+				if (bt->isSigned)
+				{
+					doCast<long long>(v, t, bs);
+				}
+				else
+				{
+					doCast<unsigned long long>(v, t, bs);
+				}
+			}
+		}
+	}
+	else if (target->isEnum())
+	{
+		if (v.type->isEnum())
+		{
+			memcpy(v.buffer, pos, v.type->getSize());
+		}
+		else
+		{
+			int size;
+			BasicType *basic = v.type->toBasic();
+
+			if (basic->getSize() == 1)
+			{
+				if (basic->isSigned)
+				{
+					size = getChar(t);
+				}
+				else
+				{
+					size = getUchar(t);
+				}
+			}
+			else if (v.type->getSize() == 2)
+			{
+				if (basic->isSigned)
+				{
+					size = getShort(t);
+				}
+				else
+				{
+					size = getUShort(t);
+				}
+			}
+			else if (v.type->getSize() == 4)
+			{
+				if (basic->isSigned)
+				{
+					size = getInt(t);
+				}
+				else
+				{
+					size = getUInt(t);
+				}
+			}
+			else if (v.type->getSize() == 8)
+			{
+				if (basic->isSigned)
+				{
+					size = getLong(t);
+				}
+				else
+				{
+					size = getULong(t);
+				}
+			}
+
+			memcpy(v.buffer, &size, v.type->getSize());
+		}
+
+
+	}
+	else if (target->isPointer())
+	{
+		if (v.type->isPointer())
+		{
+			memcpy(v.buffer,pos,v.type->getSize());
+		}
+		else
+		{
+			int size;
+			BasicType *basic = v.type->toBasic();
+
+			if (basic->getSize() == 1)
+			{
+				if (basic->isSigned)
+				{
+					size = getChar(t);
+				}
+				else
+				{
+					size = getUchar(t);
+				}
+			}
+			else if (v.type->getSize() == 2)
+			{
+				if (basic->isSigned)
+				{
+					size = getShort(t);
+				}
+				else
+				{
+					size = getUShort(t);
+				}
+			}
+			else if (v.type->getSize() == 4)
+			{
+				if (basic->isSigned)
+				{
+					size = getInt(t);
+				}
+				else
+				{
+					size = getUInt(t);
+				}
+			}
+			else if (v.type->getSize() == 8)
+			{
+				if (basic->isSigned)
+				{
+					size = getLong(t);
+				}
+				else
+				{
+					size = getULong(t);
+				}
+			}
+
+			memcpy(v.buffer,&size,v.type->getSize());
+		}
+	}
+	else
+	{
+		memcpy((char *)t.value + t.offset, v.buffer, target->getSize());
+	}
+
+	return v;
 }
 
 VariableDefState * AStree::toVariableDefState()
@@ -318,6 +636,8 @@ Result BreakState::eval()
 	}
 
 	loop->isBreak = true;
+
+	return Result();
 }
 
 bool BreakState::isLeftValue()
@@ -455,7 +775,7 @@ Result VariableDefState::eval()
 		return Result();
 	}
 
-	Value v= value->eval();
+	EvalValue v= value->eval();
 	Result t = id->eval();
 	memcpy((char *)t.value + t.offset, v.buffer,t.type->getSize());
 	v.release();
@@ -472,7 +792,7 @@ bool VariableDefState::isVariableDefState()
 	return true;
 }
 
-Value IniList::eval()
+EvalValue IniList::eval()
 {	
 	if (nexts.size() == 0)
 	{
@@ -480,14 +800,14 @@ Value IniList::eval()
 		return AStree::cast(t, type);
 	}
 
-	Value v;
+	EvalValue v;
 	v.type = type;
 	v.buffer = new char[type->getSize()];
 	memset(v.buffer, 0, type->getSize());
 
 	for (int i = 0; i < nexts.size(); ++i)
 	{
-		Value t = nexts[i]->eval();
+		EvalValue t = nexts[i]->eval();
 		memcpy(v.buffer + offset[i], t.buffer,nexts[i]->type->getSize());
 		v.release();
 	}
@@ -495,17 +815,37 @@ Value IniList::eval()
 	return v;
 }
 
-Types * Id::getType()
+Types * IdExpr::getType()
 {
 	return nullptr;
 }
 
-Result Id::eval()
+Result IdExpr::eval()
 {
-	return Result();
+	Result t;
+	t.type = type;
+	t.offset = offset;
+	if (reg == GlobalVariable)
+	{
+		t.value = parser->getGlobalRegion();
+	}
+	else if (reg == StaticVariable)
+	{
+		t.value = parser->getStackRegion();
+	}
+	else
+	{
+		t.value = parser->getStackRegion();
+	}
+
+	return t;
 }
 
-bool Id::isLeftValue()
+bool IdExpr::isLeftValue()
 {
-	return false;
+	if (type->isArray() || type->isFunction())
+	{
+		return false;
+	}
+	return !type->isConst;
 }

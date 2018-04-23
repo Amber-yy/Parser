@@ -1779,6 +1779,21 @@ void Parser::getEnumTypedef(bool isStatic, bool isConst, Types * type, Types * c
 	getStructTypedef(isStatic, isConst, type, constType, name);
 }
 
+void * Parser::getStackRegion()
+{
+	return data->stack;
+}
+
+void * Parser::getStaticRegion()
+{
+	return data->staticRegion.data;
+}
+
+void * Parser::getGlobalRegion()
+{
+	return data->globalRegion.data;
+}
+
 AStreeRef Parser::getStatement(AStree * block)
 {
 
@@ -1816,13 +1831,10 @@ AStreeRef Parser::getStatement(AStree * block)
 	}
 	else if(data->token.peek(0).isKeyWord()||!findSymbol(data->token.peek(0).getString())->isVariable)
 	{
-		getVariableDefState(block);
-	}
-	else
-	{
-		getExprState(block);
+		return getVariableDefState(block);
 	}
 
+	return getExprState(block);
 }
 
 AStreeRef Parser::getVariableDefState(AStree * block)
@@ -1830,8 +1842,26 @@ AStreeRef Parser::getVariableDefState(AStree * block)
 	Types *tp = peekType();
 	variable v = getVariables(tp);
 
+	if (data->symbols[data->currentLevel].find(v.name)!=data->symbols[0].end())
+	{
+		addError(std::string("重定义的标识符"));
+	}
+
 	symbol t;
-	t.offSet = data->currentOffset;
+	if (tp->isStatic)//加入静态区间
+	{
+		t.offSet = data->staticRegion.currentOffset;
+		VariableValue vv;
+		vv.type = v.type;
+		vv.buffer = new char[v.type->getSize()];
+		data->staticRegion.addValue(vv);
+		vv.release();
+	}
+	else
+	{
+		t.offSet = data->currentOffset;
+	}
+
 	t.isDefined = true;
 	t.isVariable = true;
 	t.isStatic = tp->isStatic;
@@ -1844,8 +1874,20 @@ AStreeRef Parser::getVariableDefState(AStree * block)
 	rs->block = block;
 	VariableDefState *vds = rs->toVariableDefState();
 
-	//vds->id
+	AStreeRef id = std::make_unique<IdExpr>();
+	id->function = data->currentFunction;
+	id->block = block;
+	IdExpr *ie = id->toIdExpr();
+	if (t.isStatic)
+	{
+		ie->reg = StaticVariable;
+	}
+	else
+	{
+		ie->reg = Local;
+	}
 
+	vds->id = std::move(id);
 	vds->value = getIni(t.type, block);
 
 	return rs;
@@ -1918,7 +1960,7 @@ AStreeRef Parser::getSwitchState(AStree * block)
 				addError(std::string("case后的表达式类型与switch不符"));
 			}
 
-			sw->conditions.push_back(t);
+			sw->conditions.push_back(std::move(t));
 		}
 
 		sw->states.push_back(std::vector<AStreeRef>());
@@ -2718,6 +2760,11 @@ variable Parser::getVariables(Types *pre)
 	bool sta = pre->isStatic;
 	pre->isStatic = false;
 	t.type->isStatic =sta;
+
+	if (!t.type->canInstance())
+	{
+		addError(std::string("不能定义此类型的变量"));
+	}
 
 	return t;
 }

@@ -17,6 +17,7 @@ struct StructDef;
 struct UnionDef;
 struct EnumDef;
 
+using IniRef = std::unique_ptr<IniList>;
 using AStreeRef = std::unique_ptr<AStree>;
 
 class Parser
@@ -41,6 +42,9 @@ public:
 	void getUnionTypedef(bool isStatic, bool isConst, Types *type, Types *constType, std::string &name);
 	void getEnumVariable(bool isStatic, bool isConst, Types *type, Types *constType);
 	void getEnumTypedef(bool isStatic, bool isConst, Types *type, Types *constType, std::string &name);
+	void *getStackRegion();
+	void *getStaticRegion();
+	void *getGlobalRegion();
 	AStreeRef getStatement(AStree *block);
 	AStreeRef getVariableDefState(AStree *block);
 	AStreeRef getExprState(AStree *block);

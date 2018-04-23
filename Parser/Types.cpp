@@ -51,6 +51,11 @@ FunctionType * Types::toFunction()
 	return dynamic_cast<FunctionType *>(this);
 }
 
+EnumType * Types::toEnum()
+{
+	return dynamic_cast<EnumType *>(this);
+}
+
 bool Types::isBasic()
 {
 	return false;
@@ -98,6 +103,17 @@ BasicType::BasicType()
 	size=0;
 }
 
+bool BasicType::same(Types * tp)
+{
+	if (!tp->isBasic())
+	{
+		return false;
+	}
+
+	BasicType *basic=tp->toBasic();
+	return isSigned==basic->isSigned&&isFloat==basic->isFloat&&size==basic->size;
+}
+
 bool BasicType::equal(Types * tp)
 {
 	if (!tp->isBasic())
@@ -105,12 +121,14 @@ bool BasicType::equal(Types * tp)
 		return false;
 	}
 
-	return memcmp(this, tp, sizeof(BasicType))==0;
+	BasicType *basic = tp->toBasic();
+
+	return memcmp(this, basic, sizeof(BasicType))==0;
 }
 
 bool BasicType::compatible(Types * tp)
 {
-	return tp->isBasic();
+	return tp->isBasic()||tp->isEnum();
 }
 
 std::unique_ptr<Types> BasicType::copy()
@@ -133,6 +151,11 @@ int BasicType::getSize()
 bool BasicType::canInstance()
 {
 	return true;
+}
+
+bool StructType::same(Types * tp)
+{
+	return compatible(tp);
 }
 
 bool StructType::equal(Types * tp)
@@ -181,6 +204,11 @@ bool StructType::canInstance()
 	return getSize()>0;
 }
 
+bool UnionType::same(Types * tp)
+{
+	return compatible(tp);
+}
+
 bool UnionType::equal(Types * tp)
 {
 	if (!tp->isUnion())
@@ -227,6 +255,11 @@ bool UnionType::canInstance()
 	return getSize()>0;
 }
 
+bool VoidType::same(Types * tp)
+{
+	return false;
+}
+
 bool VoidType::equal(Types * tp)
 {
 	if (!tp->isVoid())
@@ -264,6 +297,11 @@ int VoidType::getSize()
 	return 0;
 }
 
+bool PointerType::same(Types * tp)
+{
+	return false;
+}
+
 bool PointerType::equal(Types * tp)
 {
 	if (!tp->isPointer())
@@ -286,6 +324,17 @@ bool PointerType::compatible(Types * tp)
 	{
 		return true;
 	}
+
+	if (tp->isArray())//指针与数组
+	{
+		if(targetType->compatible(tp->toArray()->dataType))//兼容则为C模式，相等则为C++模式
+		{
+			return true;
+		}
+
+		return false;
+	}
+
 	if (!tp->isPointer())
 	{
 		return false;
@@ -322,6 +371,11 @@ int PointerType::getSize()
 	return sizeof(void *);
 }
 
+bool ArrayType::same(Types * tp)
+{
+	return equal(tp);
+}
+
 bool ArrayType::equal(Types * tp)
 {
 	if (!tp->isArray())
@@ -340,6 +394,14 @@ bool ArrayType::equal(Types * tp)
 
 bool ArrayType::compatible(Types * tp)
 {
+	if (tp->isPointer())
+	{
+		if (dataType->compatible(tp->toPointer()->targetType))//兼容则为C模式，相等则为C++模式
+		{
+			return true;
+		}
+	}
+
 	return equal(tp);
 }
 
@@ -365,6 +427,11 @@ int ArrayType::getSize()
 	return capacity*dataType->getSize();
 }
 
+bool EnumType::same(Types * tp)
+{
+	return compatible(tp);
+}
+
 bool EnumType::equal(Types * tp)
 {
 	if (!tp->isEnum())
@@ -372,7 +439,9 @@ bool EnumType::equal(Types * tp)
 		return false;
 	}
 
-	return memcmp(this, tp, sizeof(EnumType)) == 0;
+	EnumType *en = tp->toEnum();
+
+	return memcmp(this, en, sizeof(EnumType)) == 0;
 }
 
 bool EnumType::compatible(Types * tp)
@@ -410,6 +479,11 @@ bool EnumType::isEnum()
 int EnumType::getSize()
 {
 	return sizeof(int);
+}
+
+bool FunctionType::same(Types * tp)
+{
+	return equal(tp);
 }
 
 bool FunctionType::equal(Types * tp)
