@@ -45,6 +45,7 @@ public:
 	void *getStackRegion();
 	void *getStaticRegion();
 	void *getGlobalRegion();
+	AStreeRef getPrimary(AStree *block);
 	AStreeRef getStatement(AStree *block);
 	AStreeRef getVariableDefState(AStree *block);
 	AStreeRef getExprState(AStree *block);

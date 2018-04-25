@@ -16,6 +16,12 @@ class SwitchState;
 class ForState;
 class VariableDefState;
 class IdExpr;
+class NegativeExpr;
+class EmptyState;
+class PreIncExpr;
+class PreDecExpr;
+class GetValueExpr;
+class GetAddrExpr;
 
 enum BlockType
 {
@@ -34,6 +40,7 @@ enum VariableRegion
 
 struct Result
 {
+	Result();
 	Types *type;
 	void *value;
 	int offset;
@@ -69,7 +76,19 @@ public:
 	virtual bool isForState();
 	virtual bool isVariableDefState();
 	virtual bool isIdExpr();
+	virtual bool isEmptyState();
+	virtual bool isNegative();
+	virtual bool isPreInc();
+	virtual bool isPreDec();
+	virtual bool isGetValue();
+	virtual bool isGetAddr();
 	bool parseCondition(Result t);
+	GetAddrExpr *toGetAddr();
+	GetValueExpr *toGetValue();
+	PreDecExpr *toPreDec();
+	PreIncExpr *toPreInc();
+	NegativeExpr *toNegative();
+	EmptyState *toEmptyState();
 	IdExpr *toIdExpr();
 	VariableDefState *toVariableDefState();
 	ForState *toForState();
@@ -211,9 +230,70 @@ public:
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
+	virtual bool isIdExpr()override;
 	Types *type;
 	VariableRegion reg;
 	int offset;
+};
+
+class EmptyState :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isEmptyState()override;
+};
+
+class NegativeExpr :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isNegative()override;
+	AStreeRef target;
+};
+
+class PreIncExpr :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isPreInc()override;
+	AStreeRef target;
+};
+
+class PreDecExpr :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isPreDec()override;
+	AStreeRef target;
+};
+
+class GetValueExpr :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isGetValue()override;
+	AStreeRef target;
+};
+
+class GetAddrExpr :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isGetAddr()override;
+	Types *type;
+	AStreeRef target;
 };
 
 class StringLiteral :public AStree

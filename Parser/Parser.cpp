@@ -1794,10 +1794,126 @@ void * Parser::getGlobalRegion()
 	return data->globalRegion.data;
 }
 
+AStreeRef Parser::getPrimary(AStree *block)
+{
+	//正号不起作用
+	if (data->token.peek(0).getString() == "+")
+	{
+		data->token.read();
+		return getPrimary(block);
+	}
+
+	if (data->token.peek(0).getString() == "-")
+	{
+		AStreeRef neg = std::make_unique<NegativeExpr>();
+		neg->block = block;
+		neg->function = data->currentFunction;
+		NegativeExpr *n = neg->toNegative();
+		n->target = getPrimary(block);
+		if (!n->target->getType()->isBasic())
+		{
+			addError(std::string("负号后面必须具有数值类型"));
+		}
+
+		return neg;
+	}
+
+	if (data->token.peek(0).getString() == "++")
+	{
+		AStreeRef neg = std::make_unique<PreIncExpr>();
+		neg->block = block;
+		neg->function = data->currentFunction;
+		PreIncExpr *n = neg->toPreInc();
+		n->target = getPrimary(block);
+		if (!(n->target->getType()->isBasic()||n->target->getType()->isPointer())||n->target->getType()->isConst||!n->target->isLeftValue())
+		{
+			addError(std::string("自增运算符只能用于可修改的左值"));
+		}
+
+		return neg;
+	}
+
+	if (data->token.peek(0).getString() == "--")
+	{
+		AStreeRef neg = std::make_unique<PreDecExpr>();
+		neg->block = block;
+		neg->function = data->currentFunction;
+		PreDecExpr *n = neg->toPreDec();
+		n->target = getPrimary(block);
+		if (!(n->target->getType()->isBasic() || n->target->getType()->isPointer()) || n->target->getType()->isConst || !n->target->isLeftValue())
+		{
+			addError(std::string("自减运算符只能用于可修改的左值"));
+		}
+
+		return neg;
+	}
+
+	if (data->token.peek(0).getString() == "*")
+	{
+		AStreeRef neg = std::make_unique<GetValueExpr>();
+		neg->block = block;
+		neg->function = data->currentFunction;
+		GetValueExpr *n = neg->toGetValue();
+		n->target = getPrimary(block);
+		if (!n->target->getType()->isPointer()&&!n->target->getType()->isArray())
+		{
+			addError(std::string("表达式必须具有指针类型"));
+		}
+
+		return neg;
+	}
+
+	if (data->token.peek(0).getString() == "&")
+	{
+		AStreeRef neg = std::make_unique<GetValueExpr>();
+		neg->block = block;
+		neg->function = data->currentFunction;
+		GetValueExpr *n = neg->toGetValue();
+		n->target = getPrimary(block);
+		if (!n->target->getType()->isPointer() && !n->target->getType()->isArray())
+		{
+			addError(std::string("表达式必须具有指针类型"));
+		}
+
+		return neg;
+	}
+
+	/*
+	类型转换
+	取地址
+	按位取反
+	*/
+
+	/*
+	sizeof
+	*/
+
+	/*
+	下标
+	括号
+	.
+	->
+	*/
+
+	/*
+	后置自增运算符
+	*/
+
+
+
+	return AStreeRef();
+}
+
 AStreeRef Parser::getStatement(AStree * block)
 {
-
-	if (data->token.peek(0).getString() == "return")
+	if (data->token.peek(0).getString() == ";")
+	{
+		AStreeRef emp = std::make_unique<EmptyState>();
+		emp->block = block;
+		emp->function = data->currentFunction;
+		return emp;
+	}
+	else if (data->token.peek(0).getString() == "return")
 	{
 		return getReturnState(block);
 	}
@@ -1842,6 +1958,11 @@ AStreeRef Parser::getVariableDefState(AStree * block)
 	Types *tp = peekType();
 	variable v = getVariables(tp);
 
+	if (v.type->isFunction())
+	{
+		addError(std::string("不允许在作用域内声明/定义函数"));
+	}
+
 	if (data->symbols[data->currentLevel].find(v.name)!=data->symbols[0].end())
 	{
 		addError(std::string("重定义的标识符"));
@@ -1878,6 +1999,7 @@ AStreeRef Parser::getVariableDefState(AStree * block)
 	id->function = data->currentFunction;
 	id->block = block;
 	IdExpr *ie = id->toIdExpr();
+	ie->offset = data->currentOffset;
 	if (t.isStatic)
 	{
 		ie->reg = StaticVariable;
@@ -1889,6 +2011,8 @@ AStreeRef Parser::getVariableDefState(AStree * block)
 
 	vds->id = std::move(id);
 	vds->value = getIni(t.type, block);
+
+	requireToken(";");
 
 	return rs;
 }
@@ -2093,18 +2217,34 @@ AStreeRef Parser::getForState(AStree * block)
 	{
 		f->ini = getVariableDefState(block);
 	}
-	else
+	else if (data->token.peek(0).getString() != ";")
 	{
 		f->ini = getExprState(block);
 	}
-
-	f->con = getExprState(block);
-	Types *tp = f->con->getType();
-	if (tp == nullptr || (!tp->isBasic() && !tp->isPointer()))
+	else
 	{
-		addError(std::string("表达式必须为bool类型"));
+		requireToken(";");
 	}
-	f->after = getExprState(block);
+
+	if (data->token.peek(0).getString() != ";")
+	{
+		f->con = getExprState(block);
+		Types *tp = f->con->getType();
+		if (tp == nullptr || (!tp->isBasic() && !tp->isPointer()))
+		{
+			addError(std::string("表达式必须为bool类型"));
+		}
+	}
+	else
+	{
+		requireToken(";");
+	}
+
+	if (data->token.peek(0).getString() != ")")
+	{
+		f->after = getExpr(block);
+	}
+
 	requireToken(")");
 
 	f->state = getStatement(block);

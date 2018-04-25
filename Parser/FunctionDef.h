@@ -17,6 +17,10 @@ public:
 	void setType(Types *tp);
 	bool isReturned();
 	void setReturned();
+	void *getLocal();
+	void *getStack();
+	void setOffset(int off);
+	int getOffset();
 	Types *getType();
 public:
 	static Parser *parser;

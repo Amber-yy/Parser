@@ -116,6 +116,36 @@ bool AStree::isIdExpr()
 	return false;
 }
 
+bool AStree::isEmptyState()
+{
+	return false;
+}
+
+bool AStree::isNegative()
+{
+	return false;
+}
+
+bool AStree::isPreInc()
+{
+	return false;
+}
+
+bool AStree::isPreDec()
+{
+	return false;
+}
+
+bool AStree::isGetValue()
+{
+	return false;
+}
+
+bool AStree::isGetAddr()
+{
+	return false;
+}
+
 bool AStree::parseCondition(Result res)
 {
 	char *data = (char *)res.value + res.offset;
@@ -129,6 +159,36 @@ bool AStree::parseCondition(Result res)
 	}
 
 	return false;
+}
+
+GetAddrExpr * AStree::toGetAddr()
+{
+	return dynamic_cast<GetAddrExpr *>(this);
+}
+
+GetValueExpr * AStree::toGetValue()
+{
+	return dynamic_cast<GetValueExpr *>(this);
+}
+
+PreDecExpr * AStree::toPreDec()
+{
+	return dynamic_cast<PreDecExpr *>(this);
+}
+
+PreIncExpr * AStree::toPreInc()
+{
+	return dynamic_cast<PreIncExpr *>(this);
+}
+
+NegativeExpr * AStree::toNegative()
+{
+	return dynamic_cast<NegativeExpr *>(this);
+}
+
+EmptyState * AStree::toEmptyState()
+{
+	return dynamic_cast<EmptyState *>(this);
 }
 
 IdExpr * AStree::toIdExpr()
@@ -459,6 +519,8 @@ Result Block::eval()
 	AStree *loop=nullptr;
 	AStree *temp = block;
 
+	int off = function->getOffset();
+
 	while (temp)
 	{
 		if (temp->type == LoopBlock|| temp->type == SwitchBlock)
@@ -478,6 +540,8 @@ Result Block::eval()
 			break;
 		}
 	}
+
+	function->setOffset(off);
 
 	return Result();
 }
@@ -657,6 +721,8 @@ Types * SwitchState::getType()
 
 Result SwitchState::eval()
 {
+	int off = function->getOffset();
+
 	Result v=target->eval();
 	char *buffer = new char[v.type->getSize()];
 	char *test = new char[v.type->getSize()];
@@ -711,6 +777,8 @@ Result SwitchState::eval()
 
 	delete test;
 	delete buffer;
+
+	function->setOffset(off);
 	return Result();
 }
 
@@ -736,12 +804,27 @@ Result ForState::eval()
 		return Result();
 	}
 
-	for (ini->eval();parseCondition(con->eval());after->eval())
+	if (ini.get() != nullptr)
+	{
+		ini->eval();
+	}
+
+	for (;;)
 	{
 		state->eval();
 		if (isBreak || function->isReturned())
 		{
 			break;
+		}
+
+		if (con.get() != nullptr & !parseCondition(con->eval()))
+		{
+			break;
+		}
+
+		if (after.get() != nullptr)
+		{
+			after->eval();
 		}
 	}
 
@@ -770,6 +853,8 @@ Types * VariableDefState::getType()
 
 Result VariableDefState::eval()
 {
+	int off = function->getOffset();
+
 	if (isInied&&id->getType()->isStatic)
 	{
 		return Result();
@@ -779,6 +864,9 @@ Result VariableDefState::eval()
 	Result t = id->eval();
 	memcpy((char *)t.value + t.offset, v.buffer,t.type->getSize());
 	v.release();
+
+	function->setOffset(off + id->getType()->getSize());
+
 	return Result();
 }
 
@@ -831,11 +919,28 @@ Result IdExpr::eval()
 	}
 	else if (reg == StaticVariable)
 	{
-		t.value = parser->getStackRegion();
+		t.value = parser->getStaticRegion();
+	}
+	else if(reg==Arg)
+	{
+		t.value = function->getStack();
 	}
 	else
 	{
-		t.value = parser->getStackRegion();
+		t.value = function->getLocal();
+	}
+
+	/*
+	对数组求值不返回值，返回地址
+	*/
+	if (type->isArray())
+	{
+		int off = function->getOffset();
+		void *local = function->getLocal();
+		char *add=(char *)t.value + t.offset;//求出数组的首地址并放入栈空间
+		*(char **)local = add;
+		t.value = (char *)local+off;
+		t.offset = 0;
 	}
 
 	return t;
@@ -843,9 +948,441 @@ Result IdExpr::eval()
 
 bool IdExpr::isLeftValue()
 {
-	if (type->isArray() || type->isFunction())
+	//if (type->isArray() || type->isFunction())
+	//{
+	//	return false;
+	//}
+
+	return true;
+}
+
+bool IdExpr::isIdExpr()
+{
+	return true;
+}
+
+Types * EmptyState::getType()
+{
+	return nullptr;
+}
+
+Result EmptyState::eval()
+{
+	return Result();
+}
+
+bool EmptyState::isLeftValue()
+{
+	return false;
+}
+
+bool EmptyState::isEmptyState()
+{
+	return true;
+}
+
+Result::Result()
+{
+	offset = 0;
+	value = nullptr;
+	type = nullptr;
+}
+
+Types * NegativeExpr::getType()
+{
+	return target->getType();
+}
+
+template<class T>
+void getNegative(void *a,void *b)
+{
+	*(T *)a=-*(T *)b;
+}
+
+Result NegativeExpr::eval()
+{
+	Result t;
+	int off = function->getOffset();
+	t.type = target->getType();
+	t.value = (char *)function->getLocal()+off;
+	t.offset = 0;
+	Result r=target->eval();
+
+	char *x = (char *)r.value;
+	x += r.offset;
+	r.value = x;
+
+	BasicType *basic = t.type->toBasic();
+
+	if (basic->isFloat)
 	{
-		return false;
+		if (basic->size == 4)
+		{
+			getNegative<float>(t.value, r.value);
+		}
+		else
+		{
+			getNegative<double>(t.value, r.value);
+		}
 	}
-	return !type->isConst;
+	else
+	{
+		if (basic->size == 1)
+		{
+			if (basic->isSigned)
+			{
+				getNegative<char>(t.value, r.value);
+			}
+			else
+			{
+				getNegative<unsigned char>(t.value, r.value);
+			}
+		}
+		else if (basic->size == 2)
+		{
+			if (basic->isSigned)
+			{
+				getNegative<short>(t.value, r.value);
+			}
+			else
+			{
+				getNegative<unsigned short>(t.value, r.value);
+			}
+		}
+		else if (basic->size == 4)
+		{
+			if (basic->isSigned)
+			{
+				getNegative<int>(t.value, r.value);
+			}
+			else
+			{
+				getNegative<unsigned int>(t.value, r.value);
+			}
+		}
+		else if (basic->size == 8)
+		{
+			if (basic->isSigned)
+			{
+				getNegative<long long>(t.value, r.value);
+			}
+			else
+			{
+				getNegative<unsigned long long>(t.value, r.value);
+			}
+		}
+	}
+
+	return t;
+}
+
+bool NegativeExpr::isLeftValue()
+{
+	return target->isLeftValue();
+}
+
+bool NegativeExpr::isNegative()
+{
+	return true;
+}
+
+Types * PreIncExpr::getType()
+{
+	return target->getType();
+}
+
+template<class T>
+void Inc(void *a)
+{
+	*(T *)a += 1;
+}
+
+Result PreIncExpr::eval()
+{
+	Result r = target->eval();
+	char *x = (char *)r.value;
+	x += r.offset;
+	r.value = x;
+
+	if (r.type->isPointer())
+	{
+		*(int *)r.value += r.type->getSize();
+		return r;
+	}
+
+	BasicType *basic = r.type->toBasic();
+
+	if (basic->isFloat)
+	{
+		if (basic->size == 4)
+		{
+			Inc<float>(r.value);
+		}
+		else
+		{
+			Inc<double>(r.value);
+		}
+	}
+	else
+	{
+		if (basic->size == 1)
+		{
+			if (basic->isSigned)
+			{
+				Inc<char>(r.value);
+			}
+			else
+			{
+				Inc<unsigned char>(r.value);
+			}
+		}
+		else if (basic->size == 2)
+		{
+			if (basic->isSigned)
+			{
+				Inc<short>(r.value);
+			}
+			else
+			{
+				Inc<unsigned short>(r.value);
+			}
+		}
+		else if (basic->size == 4)
+		{
+			if (basic->isSigned)
+			{
+				Inc<int>(r.value);
+			}
+			else
+			{
+				Inc<unsigned int>(r.value);
+			}
+		}
+		else if (basic->size == 8)
+		{
+			if (basic->isSigned)
+			{
+				Inc<long long>(r.value);
+			}
+			else
+			{
+				Inc<unsigned long long>(r.value);
+			}
+		}
+	}
+
+	return r;
+}
+
+bool PreIncExpr::isLeftValue()
+{
+	return true;
+}
+
+bool PreIncExpr::isPreInc()
+{
+	return true;
+}
+
+Types * PreDecExpr::getType()
+{
+	return target->getType();
+}
+
+template<class T>
+void Dec(void *a)
+{
+	*(T *)a += 1;
+}
+
+Result PreDecExpr::eval()
+{
+	Result r = target->eval();
+	char *x = (char *)r.value;
+	x += r.offset;
+	r.value = x;
+
+	if (r.type->isPointer())
+	{
+		*(int *)r.value -= r.type->getSize();
+		return r;
+	}
+
+	BasicType *basic = r.type->toBasic();
+
+	if (basic->isFloat)
+	{
+		if (basic->size == 4)
+		{
+			Dec<float>(r.value);
+		}
+		else
+		{
+			Dec<double>(r.value);
+		}
+	}
+	else
+	{
+		if (basic->size == 1)
+		{
+			if (basic->isSigned)
+			{
+				Dec<char>(r.value);
+			}
+			else
+			{
+				Dec<unsigned char>(r.value);
+			}
+		}
+		else if (basic->size == 2)
+		{
+			if (basic->isSigned)
+			{
+				Dec<short>(r.value);
+			}
+			else
+			{
+				Dec<unsigned short>(r.value);
+			}
+		}
+		else if (basic->size == 4)
+		{
+			if (basic->isSigned)
+			{
+				Dec<int>(r.value);
+			}
+			else
+			{
+				Dec<unsigned int>(r.value);
+			}
+		}
+		else if (basic->size == 8)
+		{
+			if (basic->isSigned)
+			{
+				Dec<long long>(r.value);
+			}
+			else
+			{
+				Dec<unsigned long long>(r.value);
+			}
+		}
+	}
+
+	return r;
+}
+
+bool PreDecExpr::isLeftValue()
+{
+	return true;
+}
+
+bool PreDecExpr::isPreDec()
+{
+	return true;
+}
+
+Types * GetValueExpr::getType()
+{
+	if (target->getType()->isPointer())
+	{
+		return target->getType()->toPointer()->targetType;
+	}
+
+	return target->getType()->toArray()->dataType;
+}
+
+Result GetValueExpr::eval()
+{
+	Result t = target->eval();
+	Result r;
+
+	if (target->getType()->isPointer())
+	{
+		r.type = target->getType()->toPointer()->targetType;
+	}
+	else
+	{
+		r.type = target->getType()->toArray()->dataType;
+	}
+
+	char *s = (char *)t.value + t.offset;//指针本身的地址，是一个二级指针
+	r.value = *(char **)s;//解除引用二级指针，得到指针的值
+	r.offset = 0;//没有偏移
+
+	if (r.type->isArray())//如果解除引用的目标是数组，还需要进一步处理，使返回的值是地址
+	{
+		int off = function->getOffset();
+		void *local = function->getLocal();
+		char *add = (char *)r.value + r.offset;//求出数组的首地址并放入栈空间
+		*(char **)local = add;
+		r.value = (char *)local+off;
+		r.offset = 0;
+	}
+
+	return r;
+}
+
+bool GetValueExpr::isLeftValue()
+{
+	//if (target->getType()->isPointer())
+	//{
+	//	if (target->getType()->toPointer()->targetType->isArray())
+	//	{
+	//		return false;
+	//	}
+	//	if (target->getType()->toPointer()->targetType->isConst)
+	//	{
+	//		return false;
+	//	}
+	//}
+	//else
+	//{
+	//	if (target->getType()->toArray()->dataType->isConst)
+	//	{
+	//		return false;
+	//	}
+	//	if (target->getType()->toArray()->dataType->isArray())
+	//	{
+	//		return false;
+	//	}
+	//}
+	
+	return true;
+}
+
+bool GetValueExpr::isGetValue()
+{
+	return true;
+}
+
+Types * GetAddrExpr::getType()
+{
+	return type;
+}
+
+Result GetAddrExpr::eval()
+{
+	Result t=target->eval();
+
+	int off = function->getOffset();
+	char *local = (char *)function->getLocal();
+	char *add = (char *)t.value + t.offset;//求出数据的地址并放入栈空间
+	t.value = (char *)local + off;
+	*(char **)t.value = add;
+	t.offset = 0;
+
+	t.type = type;
+
+	return t;
+}
+
+bool GetAddrExpr::isLeftValue()
+{
+	return false;
+}
+
+bool GetAddrExpr::isGetAddr()
+{
+	return true;
 }

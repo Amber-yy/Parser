@@ -6,8 +6,11 @@ Parser *FunctionDef::parser;
 
 struct FunctionDef::Data
 {
+	AStreeRef block;	
 	Types *type;
-	AStreeRef block;
+	void *stack;
+	void *local;
+	int currentOffset;
 	bool isReturn;
 };
 
@@ -40,6 +43,26 @@ bool FunctionDef::isReturned()
 void FunctionDef::setReturned()
 {
 	data->isReturn = true;
+}
+
+void * FunctionDef::getLocal()
+{
+	return data->local;
+}
+
+void * FunctionDef::getStack()
+{
+	return data->stack;
+}
+
+void FunctionDef::setOffset(int off)
+{
+	data->currentOffset = off;
+}
+
+int FunctionDef::getOffset()
+{
+	return data->currentOffset;
 }
 
 Types * FunctionDef::getType()
