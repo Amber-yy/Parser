@@ -22,6 +22,12 @@ class PreIncExpr;
 class PreDecExpr;
 class GetValueExpr;
 class GetAddrExpr;
+class BitNegativeExpr;
+class TypeTranExpr;
+class SizeOfExpr;
+class IntLiteralExpr;
+class RealLiteralExpr;
+class StringLiteralExpr;
 
 enum BlockType
 {
@@ -82,7 +88,19 @@ public:
 	virtual bool isPreDec();
 	virtual bool isGetValue();
 	virtual bool isGetAddr();
+	virtual bool isBitNegative();
+	virtual bool isTypeTran();
+	virtual bool isSizeOf();
+	virtual bool isIntLiteral();
+	virtual bool isRealLiteral();
+	virtual bool isStringLiteral();
 	bool parseCondition(Result t);
+	StringLiteralExpr *toStringLiteral();
+	RealLiteralExpr *toRealLiteral();
+	IntLiteralExpr *toIntLiteral();
+	SizeOfExpr *toSizeOf();
+	TypeTranExpr *toTypeTran();
+	BitNegativeExpr *toBitNegative();
 	GetAddrExpr *toGetAddr();
 	GetValueExpr *toGetValue();
 	PreDecExpr *toPreDec();
@@ -219,8 +237,8 @@ public:
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
 	virtual bool isVariableDefState()override;
-	AStreeRef id;
-	IniRef value;
+	std::vector<AStreeRef> id;
+	std::vector<IniRef> value;
 	bool isInied;
 };
 
@@ -292,11 +310,74 @@ public:
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
 	virtual bool isGetAddr()override;
-	Types *type;
+	Types *thistype;
 	AStreeRef target;
 };
 
-class StringLiteral :public AStree
+class BitNegativeExpr :public AStree
 {
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isNegative()override;
+	AStreeRef target;
+};
 
+class TypeTranExpr :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isTypeTran()override;
+	Types *targetType;
+	AStreeRef target;
+};
+
+class SizeOfExpr :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isTypeTran()override;
+	Types *thisType;
+	int size;
+};
+
+class IntLiteralExpr :public AStree
+{
+public:
+	static Types *thisType;
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isIntLiteral()override;
+	long long value;
+};
+
+class RealLiteralExpr :public AStree
+{
+public:
+	static Types *thisType;
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isRealLiteral()override;
+	double value;
+};
+
+class StringLiteralExpr :public AStree
+{
+public:
+	static Types *thisType;
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isStringLiteral()override;
+	char* value;
 };

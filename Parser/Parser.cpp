@@ -1794,6 +1794,80 @@ void * Parser::getGlobalRegion()
 	return data->globalRegion.data;
 }
 
+AStreeRef Parser::getAtomic(AStree * block)
+{
+	AStreeRef neg;
+	if (data->token.peek(0).getString() == "(")
+	{
+		requireToken("(");
+		neg= getExpr(block);
+		requireToken(")");
+	}
+	else if (data->token.peek(0).getString() == "sizeof")
+	{
+		data->token.read();
+		neg = std::make_unique<SizeOfExpr>();
+		neg->block = block;
+		neg->function = data->currentFunction;
+
+		SizeOfExpr *soe = neg->toSizeOf();
+		requireToken("(");
+		
+		if (data->token.peek(0).isKeyWord() || !findSymbol(data->token.peek(0).getString())->isVariable)
+		{
+			Types *pre = peekType();
+			variable v = getVariables(pre, true);
+			if (!v.type->canInstance())
+			{
+				addError(std::string("不允许使用不完整的类型"));
+			}
+			soe->size=v.type->getSize();
+		}
+		else
+		{
+			soe->size = getExpr(block)->getType()->getSize();
+		}
+
+		requireToken(")");
+		soe->thisType = data->allTypes[10].get();
+	}
+	else if(data->token.peek(0).isIntLiteral())
+	{
+		neg = std::make_unique<IntLiteralExpr>();
+		neg->block = block;
+		neg->function = data->currentFunction;
+
+		IntLiteralExpr *ile = neg->toIntLiteral();
+		ile->value = data->token.read().getInteger();
+		ile->thisType = data->allTypes[16].get();
+	}
+	else if (data->token.peek(0).isRealLiteral())
+	{
+		neg = std::make_unique<RealLiteralExpr>();
+		neg->block = block;
+		neg->function = data->currentFunction;
+
+		RealLiteralExpr *ile = neg->toRealLiteral();
+		ile->value = data->token.read().getInteger();
+		ile->thisType = data->allTypes[16].get();
+	}
+	else  if (data->token.peek(0).isStringLiteral())
+	{
+		neg = getStringLiteral(block);
+	}
+
+	/*
+	id
+	后置自增运算符
+	下标
+	.
+	->
+	函数
+	*/
+
+	return AStreeRef();
+}
+
 AStreeRef Parser::getPrimary(AStree *block)
 {
 	//正号不起作用
@@ -1830,6 +1904,14 @@ AStreeRef Parser::getPrimary(AStree *block)
 			addError(std::string("自增运算符只能用于可修改的左值"));
 		}
 
+		if (n->target->getType()->isPointer())
+		{
+			if (!n->target->getType()->toPointer()->targetType->canInstance())
+			{
+				addError(std::string("指针必须指向完整的类型"));
+			}
+		}
+
 		return neg;
 	}
 
@@ -1843,6 +1925,14 @@ AStreeRef Parser::getPrimary(AStree *block)
 		if (!(n->target->getType()->isBasic() || n->target->getType()->isPointer()) || n->target->getType()->isConst || !n->target->isLeftValue())
 		{
 			addError(std::string("自减运算符只能用于可修改的左值"));
+		}
+
+		if (n->target->getType()->isPointer())
+		{
+			if (!n->target->getType()->toPointer()->targetType->canInstance())
+			{
+				addError(std::string("指针必须指向完整的类型"));
+			}
 		}
 
 		return neg;
@@ -1860,48 +1950,71 @@ AStreeRef Parser::getPrimary(AStree *block)
 			addError(std::string("表达式必须具有指针类型"));
 		}
 
-		return neg;
-	}
-
-	if (data->token.peek(0).getString() == "&")
-	{
-		AStreeRef neg = std::make_unique<GetValueExpr>();
-		neg->block = block;
-		neg->function = data->currentFunction;
-		GetValueExpr *n = neg->toGetValue();
-		n->target = getPrimary(block);
-		if (!n->target->getType()->isPointer() && !n->target->getType()->isArray())
+		if (n->target->getType()->isPointer())
 		{
-			addError(std::string("表达式必须具有指针类型"));
+			if (!n->target->getType()->toPointer()->targetType->canInstance())
+			{
+				addError(std::string("指针必须指向完整的类型"));
+			}
 		}
 
 		return neg;
 	}
 
-	/*
-	类型转换
-	取地址
-	按位取反
-	*/
+	if (data->token.peek(0).getString() == "&")
+	{
+		AStreeRef neg = std::make_unique<GetAddrExpr>();
+		neg->block = block;
+		neg->function = data->currentFunction;
+		GetAddrExpr *n = neg->toGetAddr();
+		n->target = getPrimary(block);
+		
+		PointerRef ptr = std::make_unique<PointerType>();
+		ptr->targetType = n->target->getType();
+		n->thistype = ptr.get();
+		data->allTypes.push_back(std::move(ptr));
 
-	/*
-	sizeof
-	*/
+		if (!n->target->isLeftValue())
+		{
+			addError(std::string("&运算符只能用于左值"));
+		}
 
-	/*
-	下标
-	括号
-	.
-	->
-	*/
+		return neg;
+	}
 
-	/*
-	后置自增运算符
-	*/
+	if (data->token.peek(0).getString() == "~")
+	{
+		AStreeRef neg = std::make_unique<PreIncExpr>();
+		neg->block = block;
+		neg->function = data->currentFunction;
+		PreIncExpr *n = neg->toPreInc();
+		n->target = getPrimary(block);
+		if (!n->target->getType()->isBasic()||n->target->getType()->toBasic()->isFloat)
+		{
+			addError(std::string("~运算符只能用于整数"));
+		}
 
+		return neg;
+	}
 
+	/*类型转换*/
+	if (data->token.peek(0).getString() == "("&&data->token.peek(1).isKeyWord() || !findSymbol(data->token.peek(1).getString())->isVariable)
+	{
+		requireToken(")");
+		Types *pre = peekType();
+		variable v = getVariables(pre, true);
+		requireToken(")");
+		AStreeRef neg = std::make_unique<TypeTranExpr>();
+		neg->block = block;
+		neg->function = data->currentFunction;
+		TypeTranExpr *n = neg->toTypeTran();
+		n->targetType = v.type;
+		n->target = getPrimary(block);
 
-	return AStreeRef();
+		return neg;
+	}
+
+	return getAtomic(block);
 }
 
 AStreeRef Parser::getStatement(AStree * block)
@@ -1956,61 +2069,85 @@ AStreeRef Parser::getStatement(AStree * block)
 AStreeRef Parser::getVariableDefState(AStree * block)
 {
 	Types *tp = peekType();
-	variable v = getVariables(tp);
-
-	if (v.type->isFunction())
-	{
-		addError(std::string("不允许在作用域内声明/定义函数"));
-	}
-
-	if (data->symbols[data->currentLevel].find(v.name)!=data->symbols[0].end())
-	{
-		addError(std::string("重定义的标识符"));
-	}
-
-	symbol t;
-	if (tp->isStatic)//加入静态区间
-	{
-		t.offSet = data->staticRegion.currentOffset;
-		VariableValue vv;
-		vv.type = v.type;
-		vv.buffer = new char[v.type->getSize()];
-		data->staticRegion.addValue(vv);
-		vv.release();
-	}
-	else
-	{
-		t.offSet = data->currentOffset;
-	}
-
-	t.isDefined = true;
-	t.isVariable = true;
-	t.isStatic = tp->isStatic;
-	t.type = tp;
-
-	data->symbols[data->currentLevel].insert(std::pair<std::string,symbol>(v.name,t));
 
 	AStreeRef rs = std::make_unique<VariableDefState>();
 	rs->function = data->currentFunction;
 	rs->block = block;
 	VariableDefState *vds = rs->toVariableDefState();
 
-	AStreeRef id = std::make_unique<IdExpr>();
-	id->function = data->currentFunction;
-	id->block = block;
-	IdExpr *ie = id->toIdExpr();
-	ie->offset = data->currentOffset;
-	if (t.isStatic)
-	{
-		ie->reg = StaticVariable;
-	}
-	else
-	{
-		ie->reg = Local;
-	}
+	bool one = false;
 
-	vds->id = std::move(id);
-	vds->value = getIni(t.type, block);
+	while (true)
+	{
+		if (data->token.peek(0).isEos())
+		{
+			if (!one)
+			{
+				addError(std::string("应输入标识符"));
+			}
+			break;
+		}
+
+		variable v = getVariables(tp);
+
+		if (v.type->isFunction())
+		{
+			addError(std::string("不允许在作用域内声明/定义函数"));
+		}
+
+		if (data->symbols[data->currentLevel].find(v.name) != data->symbols[0].end())
+		{
+			addError(std::string("重定义的标识符"));
+		}
+
+		symbol t;
+		if (tp->isStatic)//加入静态区间
+		{
+			t.offSet = data->staticRegion.currentOffset;
+			VariableValue vv;
+			vv.type = v.type;
+			vv.buffer = new char[v.type->getSize()];
+			data->staticRegion.addValue(vv);
+			vv.release();
+		}
+		else
+		{
+			t.offSet = data->currentOffset;
+			data->currentOffset += v.type->getSize();
+		}
+
+		t.isDefined = true;
+		t.isVariable = true;
+		t.isStatic = tp->isStatic;
+		t.type = tp;
+
+		data->symbols[data->currentLevel].insert(std::pair<std::string, symbol>(v.name, t));
+
+		AStreeRef id = std::make_unique<IdExpr>();
+		id->function = data->currentFunction;
+		id->block = block;
+		IdExpr *ie = id->toIdExpr();
+		ie->offset = t.offSet;
+
+		if (t.isStatic)
+		{
+			ie->reg = StaticVariable;
+		}
+		else
+		{
+			ie->reg = Local;
+		}
+
+		vds->id.push_back(std::move(id));
+		vds->value.push_back(getIni(t.type, block));
+
+		one = true;
+
+		if (data->token.peek(0).isEos())
+		{
+			requireToken(",");
+		}
+	}
 
 	requireToken(";");
 
@@ -2311,7 +2448,33 @@ AStreeRef Parser::getReturnState(AStree * block)
 
 AStreeRef Parser::getStringLiteral(AStree * block)
 {
-	return AStreeRef();
+	AStreeRef res=std::make_unique<StringLiteralExpr>();
+	res->block = block;
+	res->function = data->currentFunction;
+	res->toStringLiteral()->value = (char *)data->staticRegion.data + data->staticRegion.currentOffset;
+
+	const std::string &str=data->token.read().getString();
+	
+	ArrayType arr;//将字符串放入静态区
+	arr.dataType = data->allTypes[2].get();
+	arr.capacity = str.size() + 1;
+	VariableValue v;
+	v.buffer = new char[str.size()+1];
+	memcpy(v.buffer,str.c_str(),str.size());
+	v.buffer[str.size()] = 0;
+	v.type = &arr;
+	data->staticRegion.addValue(v);
+	v.release();
+
+	if (res->toStringLiteral()->thisType == nullptr)
+	{
+		TypeRef ptr = std::make_unique<PointerType>();//创建一个类型
+		ptr->toPointer()->targetType = data->allTypes[2].get();
+		res->toStringLiteral()->thisType = ptr.get();
+		data->allTypes.push_back(std::move(ptr));
+	}
+
+	return res;
 }
 
 AStreeRef Parser::getBlock(FunctionDef * fun, AStree * statement)
@@ -2825,7 +2988,7 @@ IniRef Parser::getIniCore(Types * type,AStree *block)
 	return IniRef();
 }
 
-variable Parser::getVariables(Types *pre)
+variable Parser::getVariables(Types *pre,bool typeTran)
 {
 	data->origin.clear();
 
@@ -2865,6 +3028,10 @@ variable Parser::getVariables(Types *pre)
 		}
 		else if (str == ")")
 		{
+			if (typeTran&&left == right)
+			{
+				break;
+			}
 			++right;
 		}
 
@@ -2875,7 +3042,7 @@ variable Parser::getVariables(Types *pre)
 		typeTokens.push_back(tt);
 	}
 
-	if (typeTokens.empty())
+	if (!typeTran&&typeTokens.empty())
 	{
 		addError(std::string("应输入变量名"));
 	}
@@ -2884,7 +3051,14 @@ variable Parser::getVariables(Types *pre)
 	data->origin.push_back(typeTokens);
 	auto type=parseType(pre, typeTokens,0,0);
 
-	if (data->vName[0] == "")
+	if (typeTran)
+	{
+		if (data->vName[0] != "")
+		{
+			addError(std::string("应输入)"));
+		}
+	}
+	else if (data->vName[0] == "")
 	{
 		addError(std::string("应输入变量名"));
 	}

@@ -3,6 +3,11 @@
 #include "FunctionDef.h"
 #include "Types.h"
 
+
+Types *IntLiteralExpr::thisType;
+Types *RealLiteralExpr::thisType;
+Types *StringLiteralExpr::thisType;
+
 char getChar(Result t)
 {
 	return *((char*)(t.value) + t.offset);
@@ -146,6 +151,36 @@ bool AStree::isGetAddr()
 	return false;
 }
 
+bool AStree::isBitNegative()
+{
+	return false;
+}
+
+bool AStree::isTypeTran()
+{
+	return false;
+}
+
+bool AStree::isSizeOf()
+{
+	return false;
+}
+
+bool AStree::isIntLiteral()
+{
+	return false;
+}
+
+bool AStree::isRealLiteral()
+{
+	return false;
+}
+
+bool AStree::isStringLiteral()
+{
+	return false;
+}
+
 bool AStree::parseCondition(Result res)
 {
 	char *data = (char *)res.value + res.offset;
@@ -159,6 +194,36 @@ bool AStree::parseCondition(Result res)
 	}
 
 	return false;
+}
+
+StringLiteralExpr * AStree::toStringLiteral()
+{
+	return dynamic_cast<StringLiteralExpr *>(this);
+}
+
+RealLiteralExpr * AStree::toRealLiteral()
+{
+	return dynamic_cast<RealLiteralExpr *>(this);
+}
+
+IntLiteralExpr * AStree::toIntLiteral()
+{
+	return dynamic_cast<IntLiteralExpr *>(this);
+}
+
+SizeOfExpr * AStree::toSizeOf()
+{
+	return dynamic_cast<SizeOfExpr *>(this);
+}
+
+TypeTranExpr * AStree::toTypeTran()
+{
+	return dynamic_cast<TypeTranExpr *>(this);
+}
+
+BitNegativeExpr * AStree::toBitNegative()
+{
+	return dynamic_cast<BitNegativeExpr *>(this);
 }
 
 GetAddrExpr * AStree::toGetAddr()
@@ -853,19 +918,23 @@ Types * VariableDefState::getType()
 
 Result VariableDefState::eval()
 {
-	int off = function->getOffset();
 
-	if (isInied&&id->getType()->isStatic)
+	for (int i = 0; i < id.size(); ++i)
 	{
-		return Result();
+		int off = function->getOffset();
+
+		if (isInied&&id[i]->getType()->isStatic)
+		{
+			return Result();
+		}
+
+		EvalValue v = value[i]->eval();
+		Result t = id[i]->eval();
+		memcpy((char *)t.value + t.offset, v.buffer, t.type->getSize());
+		v.release();
+
+		function->setOffset(off + id[i]->getType()->getSize());
 	}
-
-	EvalValue v= value->eval();
-	Result t = id->eval();
-	memcpy((char *)t.value + t.offset, v.buffer,t.type->getSize());
-	v.release();
-
-	function->setOffset(off + id->getType()->getSize());
 
 	return Result();
 }
@@ -936,10 +1005,10 @@ Result IdExpr::eval()
 	if (type->isArray())
 	{
 		int off = function->getOffset();
-		void *local = function->getLocal();
-		char *add=(char *)t.value + t.offset;//求出数组的首地址并放入栈空间
-		*(char **)local = add;
-		t.value = (char *)local+off;
+		char *local = (char *)function->getLocal()+off;//指针指向栈空间
+		char *add=(char *)t.value + t.offset;//这个地方是数组首元素的地址，也应该是数组的地址
+		*(char **)local = add;//把栈空间强转为二级指针，并赋值为数组地址
+		t.value = local;
 		t.offset = 0;
 	}
 
@@ -1313,10 +1382,10 @@ Result GetValueExpr::eval()
 	if (r.type->isArray())//如果解除引用的目标是数组，还需要进一步处理，使返回的值是地址
 	{
 		int off = function->getOffset();
-		void *local = function->getLocal();
-		char *add = (char *)r.value + r.offset;//求出数组的首地址并放入栈空间
-		*(char **)local = add;
-		r.value = (char *)local+off;
+		char *local = (char *)function->getLocal() + off;//指针指向栈空间
+		char *add = (char *)r.value + r.offset;//这个地方是数组首元素的地址，也应该是数组的地址
+		*(char **)local = add;//把栈空间强转为二级指针，并赋值为数组地址
+		r.value = local;
 		r.offset = 0;
 	}
 
@@ -1358,7 +1427,7 @@ bool GetValueExpr::isGetValue()
 
 Types * GetAddrExpr::getType()
 {
-	return type;
+	return thistype;
 }
 
 Result GetAddrExpr::eval()
@@ -1366,13 +1435,13 @@ Result GetAddrExpr::eval()
 	Result t=target->eval();
 
 	int off = function->getOffset();
-	char *local = (char *)function->getLocal();
-	char *add = (char *)t.value + t.offset;//求出数据的地址并放入栈空间
-	t.value = (char *)local + off;
-	*(char **)t.value = add;
+	char *local = (char *)function->getLocal() + off;//指针指向栈空间
+	char *add = (char *)t.value + t.offset;//这个地方是数组首元素的地址，也应该是数组的地址
+	*(char **)local = add;//把栈空间强转为二级指针，并赋值为数组地址
+	t.value = local;
 	t.offset = 0;
 
-	t.type = type;
+	t.type = thistype;
 
 	return t;
 }
@@ -1383,6 +1452,210 @@ bool GetAddrExpr::isLeftValue()
 }
 
 bool GetAddrExpr::isGetAddr()
+{
+	return true;
+}
+
+Types * BitNegativeExpr::getType()
+{
+	return target->getType();
+}
+
+template<class T>
+void doBitNeg(Result t,void *local)
+{
+	char *temp=(char *)t.value+t.offset;
+	T n = *(T *)temp;
+	n = ~n;
+	memcpy(local, &n, sizeof(T));
+}
+
+Result BitNegativeExpr::eval()
+{
+	Result t = target->eval();
+	
+	Result r;
+	r.type = t.type;
+	r.value = (char *)function->getLocal() + function->getOffset();
+	r.offset = 0;
+
+	BasicType *basic = t.type->toBasic();
+
+	if (basic->size == 1)
+	{
+		if (basic->isSigned)
+		{
+			doBitNeg<char>(t,r.value);
+		}
+		else
+		{
+			doBitNeg<unsigned char>(t,r.value);
+		}
+	}
+	else if (basic->size == 2)
+	{
+		if (basic->isSigned)
+		{
+			doBitNeg<short>(t, r.value);
+		}
+		else
+		{
+			doBitNeg<unsigned short>(t, r.value);
+		}
+	}
+	else if (basic->size == 4)
+	{
+		if (basic->isSigned)
+		{
+			doBitNeg<int>(t, r.value);
+		}
+		else
+		{
+			doBitNeg<unsigned int>(t, r.value);
+		}
+	}
+	else if (basic->size == 8)
+	{
+		if (basic->isSigned)
+		{
+			doBitNeg<long long>(t, r.value);
+		}
+		else
+		{
+			doBitNeg<unsigned long long>(t, r.value);
+		}
+	}
+
+	return r;
+}
+
+bool BitNegativeExpr::isLeftValue()
+{
+	return false;
+}
+
+bool BitNegativeExpr::isNegative()
+{
+	return true;
+}
+
+Types * TypeTranExpr::getType()
+{
+	return targetType;
+}
+
+Result TypeTranExpr::eval()
+{
+	Result t=target->eval();
+	t.type = targetType;
+	return t;
+}
+
+bool TypeTranExpr::isLeftValue()
+{
+	return target->isLeftValue();
+}
+
+bool TypeTranExpr::isTypeTran()
+{
+	return true;
+}
+
+Types * SizeOfExpr::getType()
+{
+	return thisType;
+}
+
+Result SizeOfExpr::eval()
+{
+	Result r;
+	r.value = (char *)function->getLocal() + function->getOffset();
+	r.offset = 0;
+	*(int *)r.value =size;
+	return r;
+}
+
+bool SizeOfExpr::isLeftValue()
+{
+	return false;
+}
+
+bool SizeOfExpr::isTypeTran()
+{
+	return true;
+}
+
+Types * IntLiteralExpr::getType()
+{
+	return thisType;
+}
+
+Result IntLiteralExpr::eval()
+{
+	Result r;
+	r.type = thisType;
+	r.value = (char *)function->getLocal() + function->getOffset();
+	r.offset = 0;
+	*(long long *)r.value = value;
+	return r;
+}
+
+bool IntLiteralExpr::isLeftValue()
+{
+	return false;
+}
+
+bool IntLiteralExpr::isIntLiteral()
+{
+	return true;
+}
+
+Types * RealLiteralExpr::getType()
+{
+	return thisType;
+}
+
+Result RealLiteralExpr::eval()
+{
+	Result r;
+	r.type = thisType;
+	r.value = (char *)function->getLocal() + function->getOffset();
+	r.offset = 0;
+	*(double *)r.value = value;
+	return r;
+}
+
+bool RealLiteralExpr::isLeftValue()
+{
+	return false;
+}
+
+bool RealLiteralExpr::isRealLiteral()
+{
+	return true;
+}
+
+Types * StringLiteralExpr::getType()
+{
+	return thisType;
+}
+
+Result StringLiteralExpr::eval()
+{
+	Result r;
+	r.type = thisType;
+	r.value = (char *)function->getLocal() + function->getOffset();
+	r.offset = 0;
+	*(char **)r.value = value;
+	return r;
+}
+
+bool StringLiteralExpr::isLeftValue()
+{
+	return false;
+}
+
+bool StringLiteralExpr::isStringLiteral()
 {
 	return true;
 }

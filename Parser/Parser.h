@@ -45,6 +45,7 @@ public:
 	void *getStackRegion();
 	void *getStaticRegion();
 	void *getGlobalRegion();
+	AStreeRef getAtomic(AStree *block);
 	AStreeRef getPrimary(AStree *block);
 	AStreeRef getStatement(AStree *block);
 	AStreeRef getVariableDefState(AStree *block);
@@ -67,7 +68,7 @@ public:
 	VariableValue getConstIniCore(Types *type);
 	IniRef getIni(Types *type, AStree *block);
 	IniRef getIniCore(Types *type, AStree *block);
-	variable getVariables(Types *pre);
+	variable getVariables(Types *pre,bool typeTran=false);
 	symbol *findSymbol(const std::string &name);
 	Types *peekType(bool args=false);
 	int getBasicType(std::vector<std::string> &basic);
