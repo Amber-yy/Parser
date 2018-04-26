@@ -28,6 +28,9 @@ class SizeOfExpr;
 class IntLiteralExpr;
 class RealLiteralExpr;
 class StringLiteralExpr;
+class PostIncExpr;
+class PostDecExpr;
+class ArrayAccessExpr;
 
 enum BlockType
 {
@@ -94,7 +97,13 @@ public:
 	virtual bool isIntLiteral();
 	virtual bool isRealLiteral();
 	virtual bool isStringLiteral();
+	virtual bool isPostInc();
+	virtual bool isPostDec();
+	virtual bool isArrayAccess();
 	bool parseCondition(Result t);
+	ArrayAccessExpr *toArrayAccess();
+	PostDecExpr *toPostDec();
+	PostIncExpr *toPostInc();
 	StringLiteralExpr *toStringLiteral();
 	RealLiteralExpr *toRealLiteral();
 	IntLiteralExpr *toIntLiteral();
@@ -249,7 +258,7 @@ public:
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
 	virtual bool isIdExpr()override;
-	Types *type;
+	Types *thisType;
 	VariableRegion reg;
 	int offset;
 };
@@ -380,4 +389,35 @@ public:
 	virtual bool isLeftValue()override;
 	virtual bool isStringLiteral()override;
 	char* value;
+};
+
+class PostIncExpr : public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isPostInc()override;
+	AStreeRef target;
+};
+
+class PostDecExpr :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isPostDec()override;
+	AStreeRef target;
+};
+
+class ArrayAccessExpr :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isArrayAccess()override;
+	AStreeRef index;
+	AStreeRef addr;
 };

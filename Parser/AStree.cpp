@@ -181,6 +181,21 @@ bool AStree::isStringLiteral()
 	return false;
 }
 
+bool AStree::isPostInc()
+{
+	return false;
+}
+
+bool AStree::isPostDec()
+{
+	return false;
+}
+
+bool AStree::isArrayAccess()
+{
+	return false;
+}
+
 bool AStree::parseCondition(Result res)
 {
 	char *data = (char *)res.value + res.offset;
@@ -194,6 +209,21 @@ bool AStree::parseCondition(Result res)
 	}
 
 	return false;
+}
+
+ArrayAccessExpr * AStree::toArrayAccess()
+{
+	return dynamic_cast<ArrayAccessExpr *>(this);
+}
+
+PostDecExpr * AStree::toPostDec()
+{
+	return dynamic_cast<PostDecExpr *>(this);
+}
+
+PostIncExpr * AStree::toPostInc()
+{
+	return dynamic_cast<PostIncExpr *>(this);
 }
 
 StringLiteralExpr * AStree::toStringLiteral()
@@ -974,13 +1004,13 @@ EvalValue IniList::eval()
 
 Types * IdExpr::getType()
 {
-	return nullptr;
+	return thisType;
 }
 
 Result IdExpr::eval()
 {
 	Result t;
-	t.type = type;
+	t.type = thisType;
 	t.offset = offset;
 	if (reg == GlobalVariable)
 	{
@@ -1002,7 +1032,7 @@ Result IdExpr::eval()
 	/*
 	对数组求值不返回值，返回地址
 	*/
-	if (type->isArray())
+	if (thisType->isArray())
 	{
 		int off = function->getOffset();
 		char *local = (char *)function->getLocal()+off;//指针指向栈空间
@@ -1172,6 +1202,7 @@ Result PreIncExpr::eval()
 	char *x = (char *)r.value;
 	x += r.offset;
 	r.value = x;
+	r.offset = 0;
 
 	if (r.type->isPointer())
 	{
@@ -1270,6 +1301,7 @@ Result PreDecExpr::eval()
 	char *x = (char *)r.value;
 	x += r.offset;
 	r.value = x;
+	r.offset = 0;
 
 	if (r.type->isPointer())
 	{
@@ -1656,6 +1688,270 @@ bool StringLiteralExpr::isLeftValue()
 }
 
 bool StringLiteralExpr::isStringLiteral()
+{
+	return true;
+}
+
+Types * PostIncExpr::getType()
+{
+	return target->getType;
+}
+
+Result PostIncExpr::eval()
+{
+	Result r = target->eval();
+	char *x = (char *)r.value;
+	x += r.offset;
+	r.value = x;
+	r.offset = 0;
+
+	if (r.type->isPointer())
+	{
+		int *p = *(int **)r.value;
+		*(int *)r.value += r.type->getSize();
+		r.value = (char *)function->getLocal() + function->getOffset();
+		*(int **)r.value = p;
+		r.offset = 0;
+		return r;
+	}
+
+	char buffer[128];
+	memcpy(buffer,r.value,r.type->getSize());
+
+	BasicType *basic = r.type->toBasic();
+
+	if (basic->isFloat)
+	{
+		if (basic->size == 4)
+		{
+			Inc<float>(r.value);
+		}
+		else
+		{
+			Inc<double>(r.value);
+		}
+	}
+	else
+	{
+		if (basic->size == 1)
+		{
+			if (basic->isSigned)
+			{
+				Inc<char>(r.value);
+			}
+			else
+			{
+				Inc<unsigned char>(r.value);
+			}
+		}
+		else if (basic->size == 2)
+		{
+			if (basic->isSigned)
+			{
+				Inc<short>(r.value);
+			}
+			else
+			{
+				Inc<unsigned short>(r.value);
+			}
+		}
+		else if (basic->size == 4)
+		{
+			if (basic->isSigned)
+			{
+				Inc<int>(r.value);
+			}
+			else
+			{
+				Inc<unsigned int>(r.value);
+			}
+		}
+		else if (basic->size == 8)
+		{
+			if (basic->isSigned)
+			{
+				Inc<long long>(r.value);
+			}
+			else
+			{
+				Inc<unsigned long long>(r.value);
+			}
+		}
+	}
+
+	r.value = (char *)function->getLocal() + function->getOffset();
+	memcpy(r.value, buffer, r.type->getSize());
+	r.offset = 0;
+
+	return r;
+}
+
+bool PostIncExpr::isLeftValue()
+{
+	return false;
+}
+
+bool PostIncExpr::isPostInc()
+{
+	return true;
+}
+
+Types * PostDecExpr::getType()
+{
+	return target->getType();
+}
+
+Result PostDecExpr::eval()
+{
+	Result r = target->eval();
+	char *x = (char *)r.value;
+	x += r.offset;
+	r.value = x;
+	r.offset = 0;
+
+	if (r.type->isPointer())
+	{
+		int *p = *(int **)r.value;
+		*(int *)r.value -= r.type->getSize();
+		r.value = (char *)function->getLocal() + function->getOffset();
+		*(int **)r.value = p;
+		r.offset = 0;
+		return r;
+	}
+
+	char buffer[128];
+	memcpy(buffer, r.value, r.type->getSize());
+
+	BasicType *basic = r.type->toBasic();
+
+	if (basic->isFloat)
+	{
+		if (basic->size == 4)
+		{
+			Dec<float>(r.value);
+		}
+		else
+		{
+			Dec<double>(r.value);
+		}
+	}
+	else
+	{
+		if (basic->size == 1)
+		{
+			if (basic->isSigned)
+			{
+				Dec<char>(r.value);
+			}
+			else
+			{
+				Dec<unsigned char>(r.value);
+			}
+		}
+		else if (basic->size == 2)
+		{
+			if (basic->isSigned)
+			{
+				Dec<short>(r.value);
+			}
+			else
+			{
+				Dec<unsigned short>(r.value);
+			}
+		}
+		else if (basic->size == 4)
+		{
+			if (basic->isSigned)
+			{
+				Dec<int>(r.value);
+			}
+			else
+			{
+				Dec<unsigned int>(r.value);
+			}
+		}
+		else if (basic->size == 8)
+		{
+			if (basic->isSigned)
+			{
+				Dec<long long>(r.value);
+			}
+			else
+			{
+				Dec<unsigned long long>(r.value);
+			}
+		}
+	}
+
+	r.value = (char *)function->getLocal() + function->getOffset();
+	memcpy(r.value, buffer, r.type->getSize());
+	r.offset = 0;
+
+	return r;
+}
+
+bool PostDecExpr::isLeftValue()
+{
+	return false;
+}
+
+bool PostDecExpr::isPostDec()
+{
+	return true;
+}
+
+Types * ArrayAccessExpr::getType()
+{
+	if (addr->getType()->isPointer())
+	{
+		return addr->getType()->toPointer()->targetType;
+	}
+
+	return addr->getType()->toArray()->dataType;
+}
+
+Result ArrayAccessExpr::eval()
+{
+	/*copy*/
+	Result i = index->eval();
+	char *id = (char *)i.value + i.offset;
+
+
+	Result t = addr->eval();
+	Result r;
+
+	if (addr->getType()->isPointer())
+	{
+		r.type = addr->getType()->toPointer()->targetType;
+	}
+	else
+	{
+		r.type = addr->getType()->toArray()->dataType;
+	}
+
+	char *s = (char *)t.value + t.offset;//指针本身的地址，是一个二级指针
+	r.value = *(char **)s+n;//解除引用二级指针，得到指针的值
+	r.offset = 0;//没有偏移
+
+	if (r.type->isArray())//如果解除引用的目标是数组，还需要进一步处理，使返回的值是地址
+	{
+		int off = function->getOffset();
+		char *local = (char *)function->getLocal() + off;//指针指向栈空间
+		char *add = (char *)r.value + r.offset;//这个地方是数组首元素的地址，也应该是数组的地址
+		*(char **)local = add;//把栈空间强转为二级指针，并赋值为数组地址
+		r.value = local;
+		r.offset = 0;
+	}
+
+	return r;
+}
+
+bool ArrayAccessExpr::isLeftValue()
+{
+	return true;
+}
+
+bool ArrayAccessExpr::isArrayAccess()
 {
 	return true;
 }
