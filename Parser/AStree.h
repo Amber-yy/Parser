@@ -31,6 +31,8 @@ class StringLiteralExpr;
 class PostIncExpr;
 class PostDecExpr;
 class ArrayAccessExpr;
+class MemberAccessExpr;
+class MemberAccessPtr;
 
 enum BlockType
 {
@@ -100,7 +102,11 @@ public:
 	virtual bool isPostInc();
 	virtual bool isPostDec();
 	virtual bool isArrayAccess();
+	virtual bool isMemberAccess();
+	virtual bool isMemberAccessPtr();
 	bool parseCondition(Result t);
+	MemberAccessPtr *toMemberAccessPtr();
+	MemberAccessExpr *toMemberAccess();
 	ArrayAccessExpr *toArrayAccess();
 	PostDecExpr *toPostDec();
 	PostIncExpr *toPostInc();
@@ -420,4 +426,33 @@ public:
 	virtual bool isArrayAccess()override;
 	AStreeRef index;
 	AStreeRef addr;
+};
+
+class MemberAccessExpr :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isMemberAccess()override;
+	int offset;
+	Types*thisType;
+	AStreeRef target;
+};
+
+class MemberAccessPtr :public AStree
+{
+public:
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isMemberAccessPtr()override;
+	int offset;
+	Types*thisType;
+	AStreeRef target;
+};
+
+class FuncallExpr :public AStree
+{
+
 };

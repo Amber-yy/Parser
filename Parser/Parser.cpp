@@ -1959,16 +1959,17 @@ AStreeRef Parser::getAtomic(AStree * block)
 	{
 		if (data->token.peek(0).getString() == "++")
 		{
+			if (!(neg->getType()->isBasic() || neg->getType()->isPointer()) || neg->getType()->isConst || !neg->isLeftValue())
+			{
+				addError(std::string("自减运算符只能用于可修改的左值"));
+			}
+
 			data->token.read();
 			AStreeRef poe = std::make_unique<PostIncExpr>();
 			poe->block = block;
 			poe->function = data->currentFunction;
 			PostIncExpr *n = poe->toPostInc();
 			n->target = std::move(neg);
-			if (!(n->target->getType()->isBasic() || n->target->getType()->isPointer()) || n->target->getType()->isConst || !n->target->isLeftValue())
-			{
-				addError(std::string("自增运算符只能用于可修改的左值"));
-			}
 
 			if (n->target->getType()->isPointer())
 			{
@@ -1982,16 +1983,17 @@ AStreeRef Parser::getAtomic(AStree * block)
 		}
 		else if (data->token.peek(0).getString() == "--")
 		{
+			if (!(neg->getType()->isBasic() || neg->getType()->isPointer()) || neg->getType()->isConst || !neg->isLeftValue())
+			{
+				addError(std::string("自减运算符只能用于可修改的左值"));
+			}
+
 			data->token.read();
 			AStreeRef poe = std::make_unique<PostDecExpr>();
 			poe->block = block;
 			poe->function = data->currentFunction;
 			PostDecExpr *n = poe->toPostDec();
 			n->target = std::move(neg);
-			if (!(n->target->getType()->isBasic() || n->target->getType()->isPointer()) || n->target->getType()->isConst || !n->target->isLeftValue())
-			{
-				addError(std::string("自减运算符只能用于可修改的左值"));
-			}
 
 			if (n->target->getType()->isPointer())
 			{
@@ -2003,17 +2005,212 @@ AStreeRef Parser::getAtomic(AStree * block)
 
 			neg = std::move(poe);
 		}
+		else if(data->token.peek(0).getString() == "[")
+		{
+			if (!neg->getType()->isPointer() || !neg->getType()->isArray())
+			{
+				addError(std::string("必须具有指针或数组类型"));
+			}
+
+			Types *tp;
+			if (neg->getType()->isPointer())
+			{
+				tp=neg->getType()->toPointer()->targetType;
+			}
+			else
+			{
+				tp=neg->getType()->toArray()->dataType;
+			}
+
+			if (!tp->canInstance())
+			{
+				addError(std::string("不允许使用不完整的类型"));
+			}
+
+			AStreeRef poe = std::make_unique<ArrayAccessExpr>();
+			poe->block = block;
+			poe->function = data->currentFunction;
+			ArrayAccessExpr *n = poe->toArrayAccess();
+			n->addr = std::move(neg);
+
+			requireToken("[");
+			n->index = getExpr(block);
+			if (!n->index->getType()->isBasic() || n->index->getType()->toBasic()->isFloat)
+			{
+				addError(std::string("数组下标必须具有整数类型"));
+			}
+			requireToken("]");
+
+			neg = std::move(poe);
+		}
+		else if (data->token.peek(0).getString() == ".")
+		{
+			if (!neg->getType()->isStruct()&&!neg->getType()->isUnion())
+			{
+				addError(std::string(".运算符必须具有结构或联合体类型"));
+			}
+			requireToken(".");
+
+			if (!data->token.peek(0).isIdentifier() || data->token.peek(0).isKeyWord())
+			{
+				addError(std::string("应输入正确的标识符"));
+			}
+
+			const std::string &name = data->token.read().getString();
+
+			Types *tp;
+			int off;
+
+			if (neg->getType()->isStruct())
+			{
+				auto stru = neg->getType()->toStruct();
+				int index = -1;
+
+				auto &strdef = data->allStructDef[stru->structDef];
+
+				for (int i = 0; i <strdef.members.size(); ++i)
+				{
+					if (strdef.members[i] == name)
+					{
+						index = i;
+						break;
+					}
+				}
+
+				if (index == -1)
+				{
+					addError(std::string("没有成员")+name);
+				}
+
+				tp = strdef.types[index];
+				off = strdef.offSets[index];
+			}
+			else
+			{
+				auto uni = neg->getType()->toUnion();
+				int index = -1;
+
+				auto &unidef = data->allStructDef[uni->unionDef];
+
+				for (int i = 0; i <unidef.members.size(); ++i)
+				{
+					if (unidef.members[i] == name)
+					{
+						index = i;
+						break;
+					}
+				}
+
+				if (index == -1)
+				{
+					addError(std::string("没有成员") + name);
+				}
 
 
+				tp = unidef.types[index];
+				off = 0;
+			}
 
+			AStreeRef mem = std::make_unique<MemberAccessExpr>();
+			mem->function = data->currentFunction;
+			mem->block = block;
+			auto memac = mem->toMemberAccess();
+			memac->thisType = tp;
+			memac->offset = off;
+			memac->target = std::move(neg);
+
+			neg = std::move(mem);
+		}
+		else if (data->token.peek(0).getString() == "->")
+		{
+			if (!neg->getType()->isPointer())
+			{
+				addError(std::string("必须具有指针类型"));
+			}
+
+			auto target = neg->getType()->toPointer()->targetType;
+
+			if (!target->isStruct() && !target->isUnion())
+			{
+				addError(std::string(".运算符必须具有结构或联合体类型"));
+			}
+
+			requireToken("->");
+
+			if (!data->token.peek(0).isIdentifier() || data->token.peek(0).isKeyWord())
+			{
+				addError(std::string("应输入正确的标识符"));
+			}
+
+			const std::string &name = data->token.read().getString();
+
+			Types *tp;
+			int off;
+
+			if (target->isStruct())
+			{
+				auto stru = target->toStruct();
+				int index = -1;
+
+				auto &strdef = data->allStructDef[stru->structDef];
+
+				for (int i = 0; i <strdef.members.size(); ++i)
+				{
+					if (strdef.members[i] == name)
+					{
+						index = i;
+						break;
+					}
+				}
+
+				if (index == -1)
+				{
+					addError(std::string("没有成员") + name);
+				}
+
+				tp = strdef.types[index];
+				off = strdef.offSets[index];
+			}
+			else
+			{
+				auto uni = target->toUnion();
+				int index = -1;
+
+				auto &unidef = data->allStructDef[uni->unionDef];
+
+				for (int i = 0; i <unidef.members.size(); ++i)
+				{
+					if (unidef.members[i] == name)
+					{
+						index = i;
+						break;
+					}
+				}
+
+				if (index == -1)
+				{
+					addError(std::string("没有成员") + name);
+				}
+
+				tp = unidef.types[index];
+				off = 0;
+			}
+
+			AStreeRef mem = std::make_unique<MemberAccessPtr>();
+			mem->function = data->currentFunction;
+			mem->block = block;
+			auto memac = mem->toMemberAccessPtr();
+			memac->thisType = tp;
+			memac->offset = off;
+			memac->target = std::move(neg);
+
+			neg = std::move(mem);
+		}
+		else if (data->token.peek(0).getString() == "(")
+		{
+
+		}
 	}
-
-	/*
-	下标
-	.
-	->
-	函数
-	*/
 
 	return neg;
 }
@@ -2988,7 +3185,7 @@ IniRef Parser::getIni(Types * type,AStree *block)
 	data->token.read();
 
 	bool isBaracket = false;
-
+	//可以直接初始化
 	if (type->isArray() || type->isStruct() || type->isUnion())
 	{
 		isBaracket = true;
@@ -3234,6 +3431,17 @@ variable Parser::getVariables(Types *pre,bool typeTran)
 	if (!t.type->canInstance())
 	{
 		addError(std::string("不能定义此类型的变量"));
+	}
+
+	/*结构体为const则其内容也为const*/
+	if (t.type->isStruct() && t.type->isConst)
+	{
+
+	}
+
+	if (t.type->isUnion() && t.type->isConst)
+	{
+
 	}
 
 	return t;

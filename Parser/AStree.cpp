@@ -196,6 +196,16 @@ bool AStree::isArrayAccess()
 	return false;
 }
 
+bool AStree::isMemberAccess()
+{
+	return false;
+}
+
+bool AStree::isMemberAccessPtr()
+{
+	return false;
+}
+
 bool AStree::parseCondition(Result res)
 {
 	char *data = (char *)res.value + res.offset;
@@ -209,6 +219,16 @@ bool AStree::parseCondition(Result res)
 	}
 
 	return false;
+}
+
+MemberAccessPtr * AStree::toMemberAccessPtr()
+{
+	return dynamic_cast<MemberAccessPtr *>(this);
+}
+
+MemberAccessExpr * AStree::toMemberAccess()
+{
+	return dynamic_cast<MemberAccessExpr *>(this);
 }
 
 ArrayAccessExpr * AStree::toArrayAccess()
@@ -996,7 +1016,7 @@ EvalValue IniList::eval()
 	{
 		EvalValue t = nexts[i]->eval();
 		memcpy(v.buffer + offset[i], t.buffer,nexts[i]->type->getSize());
-		v.release();
+		t.release();
 	}
 
 	return v;
@@ -1912,10 +1932,55 @@ Types * ArrayAccessExpr::getType()
 
 Result ArrayAccessExpr::eval()
 {
-	/*copy*/
 	Result i = index->eval();
-	char *id = (char *)i.value + i.offset;
+	char *idx =(char *)i.value + i.offset;
+	int size = i.type->getSize();
+	long long id;
 
+	if (size == 1)
+	{
+		if (i.type->toBasic()->isSigned)
+		{
+			id = *idx;
+		}
+		else
+		{
+			id = *(unsigned char *)idx;
+		}
+	}
+	else if (size == 2)
+	{
+		if (i.type->toBasic()->isSigned)
+		{
+			id = *(short *)idx;
+		}
+		else
+		{
+			id = *(unsigned short *)idx;
+		}
+	}
+	else if (size == 4)
+	{
+		if (i.type->toBasic()->isSigned)
+		{
+			id = *(int *)idx;
+		}
+		else
+		{
+			id = *(unsigned int *)idx;
+		}
+	}
+	else if (size == 8)
+	{
+		if (i.type->toBasic()->isSigned)
+		{
+			id = *(long long *)idx;
+		}
+		else
+		{
+			id = *(unsigned long long *)idx;
+		}
+	}
 
 	Result t = addr->eval();
 	Result r;
@@ -1930,7 +1995,7 @@ Result ArrayAccessExpr::eval()
 	}
 
 	char *s = (char *)t.value + t.offset;//指针本身的地址，是一个二级指针
-	r.value = *(char **)s+n;//解除引用二级指针，得到指针的值
+	r.value = *(char **)s+id*t.type->getSize();//解除引用二级指针，得到指针的值
 	r.offset = 0;//没有偏移
 
 	if (r.type->isArray())//如果解除引用的目标是数组，还需要进一步处理，使返回的值是地址
@@ -1952,6 +2017,108 @@ bool ArrayAccessExpr::isLeftValue()
 }
 
 bool ArrayAccessExpr::isArrayAccess()
+{
+	return true;
+}
+
+Types * MemberAccessExpr::getType()
+{
+	return thisType;
+}
+
+Result MemberAccessExpr::eval()
+{
+	Result r=target->eval();
+	Result t;
+	t.type = thisType;
+
+	if (isLeftValue())
+	{
+		if (thisType->isArray())
+		{
+			char *s = (char *)r.value + r.offset+offset;
+			t.value = (char *)function->getLocal() + function->getOffset();
+			t.offset = 0;
+			*(char **)t.value = s;
+			return t;
+		}
+		else
+		{
+			char *s = (char *)r.value + r.offset;
+			t.value = s+offset;
+			t.offset = 0;
+			return t;
+		}
+	}
+	else
+	{
+		char *s = (char *)r.value + r.offset + offset;
+		char *des = (char *)function->getLocal() + function->getOffset;
+		memcpy(des, s, thisType->getSize());
+
+		if (thisType->isArray())
+		{
+			char *n = des + thisType->getSize();
+			*(char **)n = des;
+			t.value = n;
+			t.offset = 0;
+			return t;
+		}
+		else
+		{
+			t.value = des;
+			t.offset = 0;
+			return t;
+		}
+	}
+
+	return Result();
+}
+
+bool MemberAccessExpr::isLeftValue()
+{
+	return target->isLeftValue();
+}
+
+bool MemberAccessExpr::isMemberAccess()
+{
+	return true;
+}
+
+Types * MemberAccessPtr::getType()
+{
+	return thisType;
+}
+
+Result MemberAccessPtr::eval()
+{
+	Result r = target->eval();
+
+	Result t;
+	t.type = thisType;
+	char *s = (char *)r.value + r.offset + offset;
+
+	if (thisType->isArray())
+	{
+		t.value = (char *)function->getLocal() + function->getOffset();
+		t.offset = 0;
+		*(char **)t.value = s;
+	}
+	else
+	{
+		t.value = s;
+		t.offset = 0;
+	}
+
+	return t;
+}
+
+bool MemberAccessPtr::isLeftValue()
+{
+	return true;
+}
+
+bool MemberAccessPtr::isMemberAccessPtr()
 {
 	return true;
 }
