@@ -2208,7 +2208,86 @@ AStreeRef Parser::getAtomic(AStree * block)
 		}
 		else if (data->token.peek(0).getString() == "(")
 		{
+			if (!neg->getType()->isFunction()&&!(neg->getType()->isPointer()&& neg->getType()->toPointer()->targetType->isFunction()))
+			{
+				addError(std::string("必须具有函数或函数指针类型"));
+			}
 
+			Types *r;
+			FunctionType *fun;
+
+			if (neg->getType()->isFunction())
+			{
+				fun = neg->getType()->toFunction();
+				r =fun->returnType;
+			}
+			else
+			{
+				fun = neg->getType()->toPointer()->targetType->toFunction();
+				r=fun->returnType;
+			}
+
+			AStreeRef mem = std::make_unique<FuncallExpr>();
+			mem->function = data->currentFunction;
+			mem->block = block;
+
+			auto *foo = mem->toFuncall();
+			foo->target = std::move(neg);
+			foo->thisType = r;
+
+			requireToken("(");
+			bool more = false;
+
+			for (int i = 0;; ++i)
+			{
+				AStreeRef arg = getExpr(block,false);
+
+				if (fun->argsType[i] == nullptr)
+				{
+					more = true;
+					break;
+				}
+
+				if (!fun->argsType[i]->compatible(arg->getType()))
+				{
+					addError(std::string("应输入正确的参数类型"));
+				}
+
+				foo->args.push_back(std::move(arg));
+
+				if (data->token.peek(0).getString() == ",")
+				{
+					requireToken(",");
+				}
+				else
+				{
+					break;
+				}
+			}
+
+			if (more)
+			{
+				while(true)
+				{
+					AStreeRef arg = getExpr(block, false);
+					foo->args.push_back(std::move(arg));
+
+					if (data->token.peek(0).getString() == ",")
+					{
+						requireToken(",");
+					}
+					else
+					{
+						break;
+					}
+				}
+			}
+
+			requireToken(")");
+		}
+		else
+		{
+			break;
 		}
 	}
 
@@ -3431,17 +3510,6 @@ variable Parser::getVariables(Types *pre,bool typeTran)
 	if (!t.type->canInstance())
 	{
 		addError(std::string("不能定义此类型的变量"));
-	}
-
-	/*结构体为const则其内容也为const*/
-	if (t.type->isStruct() && t.type->isConst)
-	{
-
-	}
-
-	if (t.type->isUnion() && t.type->isConst)
-	{
-
 	}
 
 	return t;

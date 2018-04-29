@@ -16,12 +16,19 @@ public:
 	void setBlock(AStreeRef &ast);
 	void setType(Types *tp);
 	bool isReturned();
+	bool isRunning();
 	void setReturned();
 	void *getLocal();
 	void *getStack();
 	void setOffset(int off);
+	void setStack(void *s);
+	void addArgValue(void *s, int size);
+	void setReturnValue(void *s);
+	void *getReturnValue();
+	void run();
 	int getOffset();
 	Types *getType();
+	FunctionDef *copy();
 public:
 	static Parser *parser;
 protected:

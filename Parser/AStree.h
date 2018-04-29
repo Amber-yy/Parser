@@ -33,6 +33,7 @@ class PostDecExpr;
 class ArrayAccessExpr;
 class MemberAccessExpr;
 class MemberAccessPtr;
+class FuncallExpr;
 
 enum BlockType
 {
@@ -67,6 +68,9 @@ struct EvalValue
 	Types *type;
 };
 
+class AStree;
+using AStreeRef = std::unique_ptr<AStree>;
+
 class AStree
 {
 public:
@@ -77,6 +81,7 @@ public:
 	virtual Types*getType() = 0;
 	virtual Result eval()=0;
 	virtual bool isLeftValue() = 0;
+	virtual AStreeRef copy(FunctionDef *fun,AStree *block)=0;
 	virtual bool isBlock();
 	virtual bool isReturnState();
 	virtual bool isIfState();
@@ -104,7 +109,9 @@ public:
 	virtual bool isArrayAccess();
 	virtual bool isMemberAccess();
 	virtual bool isMemberAccessPtr();
+	virtual bool isFuncall();
 	bool parseCondition(Result t);
+	FuncallExpr *toFuncall();
 	MemberAccessPtr *toMemberAccessPtr();
 	MemberAccessExpr *toMemberAccess();
 	ArrayAccessExpr *toArrayAccess();
@@ -141,8 +148,6 @@ public:
 	static Parser *parser;
 };
 
-using AStreeRef = std::unique_ptr<AStree>;
-
 struct IniList;
 using IniRef= std::unique_ptr<IniList>;
 
@@ -150,15 +155,17 @@ struct IniList
 {
 	EvalValue eval();
 	AStreeRef expr;
+	IniRef copy(FunctionDef *fun,AStree *block);
 	std::vector<IniRef> nexts;
 	std::vector<int> offset;
 	Types *type;
 };
 
 class Block :public AStree
-{
+{ 
 public:
 	Block();
+	virtual AStreeRef copy(FunctionDef *fun, AStree *block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -169,6 +176,7 @@ public:
 class ReturnState :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -179,6 +187,7 @@ public:
 class IfState :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -191,6 +200,7 @@ public:
 class WhileState :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -202,6 +212,7 @@ public:
 class DoWhileState :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -213,6 +224,7 @@ public:
 class BreakState :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -222,6 +234,7 @@ public:
 class SwitchState :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -234,6 +247,7 @@ public:
 class ForState :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -247,6 +261,7 @@ public:
 class VariableDefState :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	VariableDefState();
 	virtual Types*getType()override;
 	virtual Result eval()override;
@@ -260,6 +275,7 @@ public:
 class IdExpr :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -272,6 +288,7 @@ public:
 class EmptyState :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -281,6 +298,7 @@ public:
 class NegativeExpr :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -291,6 +309,7 @@ public:
 class PreIncExpr :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -301,6 +320,7 @@ public:
 class PreDecExpr :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -311,6 +331,7 @@ public:
 class GetValueExpr :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -321,6 +342,7 @@ public:
 class GetAddrExpr :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -332,6 +354,7 @@ public:
 class BitNegativeExpr :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -342,6 +365,7 @@ public:
 class TypeTranExpr :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -353,6 +377,7 @@ public:
 class SizeOfExpr :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -366,6 +391,7 @@ class IntLiteralExpr :public AStree
 public:
 	static Types *thisType;
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -378,6 +404,7 @@ class RealLiteralExpr :public AStree
 public:
 	static Types *thisType;
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -390,6 +417,7 @@ class StringLiteralExpr :public AStree
 public:
 	static Types *thisType;
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -400,6 +428,7 @@ public:
 class PostIncExpr : public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -410,6 +439,7 @@ public:
 class PostDecExpr :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -420,6 +450,7 @@ public:
 class ArrayAccessExpr :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -431,6 +462,7 @@ public:
 class MemberAccessExpr :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -443,6 +475,7 @@ public:
 class MemberAccessPtr :public AStree
 {
 public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
 	virtual Types*getType()override;
 	virtual Result eval()override;
 	virtual bool isLeftValue()override;
@@ -454,5 +487,13 @@ public:
 
 class FuncallExpr :public AStree
 {
-
+public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isFuncall()override;
+	std::vector<AStreeRef> args;
+	Types*thisType;
+	AStreeRef target;
 };

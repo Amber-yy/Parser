@@ -206,6 +206,11 @@ bool AStree::isMemberAccessPtr()
 	return false;
 }
 
+bool AStree::isFuncall()
+{
+	return false;
+}
+
 bool AStree::parseCondition(Result res)
 {
 	char *data = (char *)res.value + res.offset;
@@ -219,6 +224,11 @@ bool AStree::parseCondition(Result res)
 	}
 
 	return false;
+}
+
+FuncallExpr * AStree::toFuncall()
+{
+	return dynamic_cast<FuncallExpr *>(this);
 }
 
 MemberAccessPtr * AStree::toMemberAccessPtr()
@@ -568,7 +578,7 @@ EvalValue AStree::cast(Result t, Types * target)
 	}
 	else
 	{
-		memcpy((char *)t.value + t.offset, v.buffer, target->getSize());
+		memcpy(v.buffer,pos, target->getSize());
 	}
 
 	return v;
@@ -624,6 +634,22 @@ Block::Block()
 	type = StateBlock;
 }
 
+AStreeRef Block::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<Block>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *blo = t->toBlock();
+	for (int i = 0; i < statements.size(); ++i)
+	{
+		blo->statements.push_back(statements[i]->copy(fun,blo));
+	}
+
+	return t;
+}
+
 Types * Block::getType()
 {
 	return nullptr;
@@ -671,6 +697,19 @@ bool Block::isBlock()
 	return true;
 }
 
+AStreeRef ReturnState::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<ReturnState>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *blo = t->toReturnState();
+	blo->expr = expr->copy(fun,block);
+
+	return t;
+}
+
 Types * ReturnState::getType()
 {
 	return function->getType()->toFunction()->returnType;
@@ -680,11 +719,17 @@ Result ReturnState::eval()
 {
 	if (expr.get() != nullptr)
 	{
-		expr->eval();
+		Result t=expr->eval();
+		function->setReturned();
+		auto vv = cast(t, getType());
+		function->setReturnValue(vv.buffer);
+		vv.release();
+		t.value = function->getReturnValue();
+		t.type = getType();
+		t.offset =0;
+		return t;
 	}
-
 	function->setReturned();
-
 	return Result();
 }
 
@@ -696,6 +741,21 @@ bool ReturnState::isLeftValue()
 bool ReturnState::isReturnState()
 {
 	return true;
+}
+
+AStreeRef IfState::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<IfState>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *ifs = t->toIfState();
+	ifs->condition = condition->copy(fun,block);
+	ifs->conTrue = conTrue->copy(fun, block);
+	ifs->conFalse = conFalse->copy(fun, block);
+
+	return t;
 }
 
 Types * IfState::getType()
@@ -730,6 +790,20 @@ bool IfState::isIfState()
 	return true;
 }
 
+AStreeRef WhileState::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<WhileState>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *wls = t->toWhileState();
+	wls->condition = condition->copy(fun, block);
+	wls->state = state->copy(fun, block);
+
+	return t;
+}
+
 Types * WhileState::getType()
 {
 	return nullptr;
@@ -759,6 +833,20 @@ bool WhileState::isLeftValue()
 bool WhileState::isWhileState()
 {
 	return true;
+}
+
+AStreeRef DoWhileState::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<DoWhileState>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *wls = t->toDoWhileState();
+	wls->condition = condition->copy(fun, block);
+	wls->state = state->copy(fun, block);
+
+	return t;
 }
 
 Types * DoWhileState::getType()
@@ -791,6 +879,15 @@ bool DoWhileState::isLeftValue()
 bool DoWhileState::isDoWhileState()
 {
 	return true;
+}
+
+AStreeRef BreakState::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<BreakState>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+	return t;
 }
 
 Types * BreakState::getType()
@@ -827,6 +924,34 @@ bool BreakState::isLeftValue()
 bool BreakState::isBreakState()
 {
 	return true;
+}
+
+AStreeRef SwitchState::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<SwitchState>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *sws = t->toSwitchState();
+	sws->target = target->copy(fun,block);
+	for (int i = 0; i < conditions.size(); ++i)
+	{
+		if (conditions[i] == nullptr)
+		{
+			sws->conditions.push_back(nullptr);
+		}
+		else
+		{
+			sws->conditions.push_back(conditions[i]->copy(fun,sws));
+		}
+		for (int j = 0; j < sws->states[i].size(); ++j)
+		{
+			sws->states[i].push_back(states[i][j]->copy(fun, sws));
+		}
+	}
+
+	return t;
 }
 
 Types * SwitchState::getType()
@@ -907,6 +1032,22 @@ bool SwitchState::isSwitchState()
 	return true;
 }
 
+AStreeRef ForState::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<ForState>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *sws = t->toForState();
+	sws->ini = ini->copy(fun,block);
+	sws->con=con->copy(fun, block);
+	sws->after=after->copy(fun, block);
+	sws->state=state->copy(fun, block);
+
+	return t;
+}
+
 Types * ForState::getType()
 {
 	return nullptr;
@@ -932,7 +1073,7 @@ Result ForState::eval()
 			break;
 		}
 
-		if (con.get() != nullptr & !parseCondition(con->eval()))
+		if (con.get() != nullptr && !parseCondition(con->eval()))
 		{
 			break;
 		}
@@ -954,6 +1095,25 @@ bool ForState::isLeftValue()
 bool ForState::isForState()
 {
 	return true;
+}
+
+AStreeRef VariableDefState::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<VariableDefState>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *vdf = t->toVariableDefState();
+	vdf->isInied = isInied;
+	
+	for (int i = 0; i < id.size(); ++i)
+	{
+		vdf->id.push_back(id[i]->copy(fun, block));
+		vdf->value.push_back(value[i]->copy(fun,block));
+	}
+
+	return t;
 }
 
 VariableDefState::VariableDefState()
@@ -1022,6 +1182,34 @@ EvalValue IniList::eval()
 	return v;
 }
 
+IniRef IniList::copy(FunctionDef *fun,AStree *block)
+{
+	IniRef ir = std::make_unique<IniList>();
+	ir->type = type;
+	for (int i = 0; i < offset.size(); ++i)
+	{
+		ir->offset.push_back(offset[i]);
+		ir->nexts.push_back(nexts[i]->copy(fun,block));
+	}
+
+	return ir;
+}
+
+AStreeRef IdExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<IdExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *ide = t->toIdExpr();
+	ide->thisType = thisType;
+	ide->reg = reg;
+	ide->offset = offset;
+
+	return t;
+}
+
 Types * IdExpr::getType()
 {
 	return thisType;
@@ -1080,6 +1268,16 @@ bool IdExpr::isIdExpr()
 	return true;
 }
 
+AStreeRef EmptyState::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<EmptyState>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	return t;
+}
+
 Types * EmptyState::getType()
 {
 	return nullptr;
@@ -1105,6 +1303,19 @@ Result::Result()
 	offset = 0;
 	value = nullptr;
 	type = nullptr;
+}
+
+AStreeRef NegativeExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<NegativeExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toNegative();
+	neg->target = target->copy(fun, block);
+
+	return t;
 }
 
 Types * NegativeExpr::getType()
@@ -1203,6 +1414,19 @@ bool NegativeExpr::isLeftValue()
 bool NegativeExpr::isNegative()
 {
 	return true;
+}
+
+AStreeRef PreIncExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<PreIncExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toPreInc();
+	neg->target = target->copy(fun, block);
+
+	return t;
 }
 
 Types * PreIncExpr::getType()
@@ -1304,6 +1528,19 @@ bool PreIncExpr::isPreInc()
 	return true;
 }
 
+AStreeRef PreDecExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<PreDecExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toPreDec();
+	neg->target = target->copy(fun, block);
+
+	return t;
+}
+
 Types * PreDecExpr::getType()
 {
 	return target->getType();
@@ -1403,6 +1640,19 @@ bool PreDecExpr::isPreDec()
 	return true;
 }
 
+AStreeRef GetValueExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<GetValueExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toGetValue();
+	neg->target = target->copy(fun, block);
+
+	return t;
+}
+
 Types * GetValueExpr::getType()
 {
 	if (target->getType()->isPointer())
@@ -1477,6 +1727,20 @@ bool GetValueExpr::isGetValue()
 	return true;
 }
 
+AStreeRef GetAddrExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<GetAddrExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toGetAddr();
+	neg->target = target->copy(fun, block);
+	neg->thistype = thistype;
+
+	return t;
+}
+
 Types * GetAddrExpr::getType()
 {
 	return thistype;
@@ -1506,6 +1770,19 @@ bool GetAddrExpr::isLeftValue()
 bool GetAddrExpr::isGetAddr()
 {
 	return true;
+}
+
+AStreeRef BitNegativeExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<BitNegativeExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toBitNegative();
+	neg->target = target->copy(fun, block);
+
+	return t;
 }
 
 Types * BitNegativeExpr::getType()
@@ -1591,6 +1868,20 @@ bool BitNegativeExpr::isNegative()
 	return true;
 }
 
+AStreeRef TypeTranExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<TypeTranExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toTypeTran();
+	neg->target = target->copy(fun, block);
+	neg->targetType = targetType;
+
+	return t;
+}
+
 Types * TypeTranExpr::getType()
 {
 	return targetType;
@@ -1611,6 +1902,20 @@ bool TypeTranExpr::isLeftValue()
 bool TypeTranExpr::isTypeTran()
 {
 	return true;
+}
+
+AStreeRef SizeOfExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<SizeOfExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toSizeOf();
+	neg->thisType = thisType;
+	neg->size = size;
+
+	return t;
 }
 
 Types * SizeOfExpr::getType()
@@ -1635,6 +1940,19 @@ bool SizeOfExpr::isLeftValue()
 bool SizeOfExpr::isTypeTran()
 {
 	return true;
+}
+
+AStreeRef IntLiteralExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<IntLiteralExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toIntLiteral();
+	neg->value = value;
+
+	return t;
 }
 
 Types * IntLiteralExpr::getType()
@@ -1662,6 +1980,19 @@ bool IntLiteralExpr::isIntLiteral()
 	return true;
 }
 
+AStreeRef RealLiteralExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<RealLiteralExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toRealLiteral();
+	neg->value = value;
+
+	return t;
+}
+
 Types * RealLiteralExpr::getType()
 {
 	return thisType;
@@ -1685,6 +2016,19 @@ bool RealLiteralExpr::isLeftValue()
 bool RealLiteralExpr::isRealLiteral()
 {
 	return true;
+}
+
+AStreeRef StringLiteralExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<StringLiteralExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toStringLiteral();
+	neg->value = value;
+
+	return t;
 }
 
 Types * StringLiteralExpr::getType()
@@ -1712,9 +2056,22 @@ bool StringLiteralExpr::isStringLiteral()
 	return true;
 }
 
+AStreeRef PostIncExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<PostIncExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toPreInc();
+	neg->target = target->copy(fun,block);
+
+	return t;
+}
+
 Types * PostIncExpr::getType()
 {
-	return target->getType;
+	return target->getType();
 }
 
 Result PostIncExpr::eval()
@@ -1814,6 +2171,19 @@ bool PostIncExpr::isLeftValue()
 bool PostIncExpr::isPostInc()
 {
 	return true;
+}
+
+AStreeRef PostDecExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<PostDecExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toPostDec();
+	neg->target = target->copy(fun, block);
+
+	return t;
 }
 
 Types * PostDecExpr::getType()
@@ -1920,6 +2290,20 @@ bool PostDecExpr::isPostDec()
 	return true;
 }
 
+AStreeRef ArrayAccessExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<ArrayAccessExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toArrayAccess();
+	neg->index = index->copy(fun, block);
+	neg->addr=addr->copy(fun, block);
+
+	return t;
+}
+
 Types * ArrayAccessExpr::getType()
 {
 	if (addr->getType()->isPointer())
@@ -2021,6 +2405,21 @@ bool ArrayAccessExpr::isArrayAccess()
 	return true;
 }
 
+AStreeRef MemberAccessExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<MemberAccessExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toMemberAccess();
+	neg->offset = offset;
+	neg->thisType = thisType;
+	neg->target = target->copy(fun, block);
+
+	return t;
+}
+
 Types * MemberAccessExpr::getType()
 {
 	return thisType;
@@ -2053,7 +2452,7 @@ Result MemberAccessExpr::eval()
 	else
 	{
 		char *s = (char *)r.value + r.offset + offset;
-		char *des = (char *)function->getLocal() + function->getOffset;
+		char *des = (char *)function->getLocal() + function->getOffset();
 		memcpy(des, s, thisType->getSize());
 
 		if (thisType->isArray())
@@ -2083,6 +2482,21 @@ bool MemberAccessExpr::isLeftValue()
 bool MemberAccessExpr::isMemberAccess()
 {
 	return true;
+}
+
+AStreeRef MemberAccessPtr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<MemberAccessPtr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toMemberAccessPtr();
+	neg->offset = offset;
+	neg->thisType = thisType;
+	neg->target = target->copy(fun, block);
+
+	return t;
 }
 
 Types * MemberAccessPtr::getType()
@@ -2119,6 +2533,95 @@ bool MemberAccessPtr::isLeftValue()
 }
 
 bool MemberAccessPtr::isMemberAccessPtr()
+{
+	return true;
+}
+
+AStreeRef FuncallExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<FuncallExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toFuncall();
+	neg->thisType = thisType;
+	neg->target = target->copy(fun, block);
+	
+	for (int i = 0; i < args.size(); ++i)
+	{
+		neg->args.push_back(args[i]->copy(fun,block));
+	}
+
+	return t;
+}
+
+Types * FuncallExpr::getType()
+{
+	return thisType;
+}
+
+Result FuncallExpr::eval()
+{
+	Result foo = target->eval();
+	FunctionDef *f;
+	if (target->getType()->isFunction())
+	{
+		f = (FunctionDef *)((char *)foo.value + foo.offset);
+	}
+	else
+	{
+		char *s = (char *)foo.value + foo.offset;
+		char *v = *(char **)s;
+		f = (FunctionDef *)v;
+	}
+
+	if (f->isRunning())
+	{
+		f = f->copy();
+	}
+
+	int off = function->getOffset();
+	f->setStack((char *)function->getStack() + off);
+
+	FunctionType *ft = thisType->toFunction();
+
+	int i;
+	for (i = 0; i < ft->args.size(); ++i)
+	{
+		int ofs= function->getOffset();
+		if (ft->argsType[i] == nullptr)
+		{
+			break;
+		}
+
+		Result r = args[i]->eval();
+		auto vv = cast(r, ft->argsType[i]);
+		f->addArgValue(vv.buffer, ft->argsType[i]->getSize());
+		function->setOffset(ofs+ ft->argsType[i]->getSize());
+		vv.release();
+	}
+
+	for (;i<args.size(); ++i)
+	{
+		int ofs = function->getOffset();
+		Result r=args[i]->eval();
+		f->addArgValue((char *)r.value+r.offset, r.type->getSize());
+		function->setOffset(ofs + ft->argsType[i]->getSize());
+	}
+
+	function->setOffset(off);
+	f->run();
+
+	return Result();
+}
+
+bool FuncallExpr::isLeftValue()
+{
+	return false;
+}
+
+bool FuncallExpr::isFuncall()
 {
 	return true;
 }
