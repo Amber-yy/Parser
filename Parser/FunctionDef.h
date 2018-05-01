@@ -11,7 +11,7 @@ using AStreeRef = std::unique_ptr<AStree>;
 class FunctionDef
 {
 public:
-	FunctionDef();
+	FunctionDef(Types *t);
 	~FunctionDef();
 	void setBlock(AStreeRef &ast);
 	void setType(Types *tp);

@@ -34,6 +34,8 @@ class ArrayAccessExpr;
 class MemberAccessExpr;
 class MemberAccessPtr;
 class FuncallExpr;
+class ConditionExpr;
+class AddExpr;
 
 enum BlockType
 {
@@ -110,7 +112,11 @@ public:
 	virtual bool isMemberAccess();
 	virtual bool isMemberAccessPtr();
 	virtual bool isFuncall();
+	virtual bool isCondition();
+	virtual bool isAdd();
 	bool parseCondition(Result t);
+	AddExpr *toAdd();
+	ConditionExpr *toCondition();
 	FuncallExpr *toFuncall();
 	MemberAccessPtr *toMemberAccessPtr();
 	MemberAccessExpr *toMemberAccess();
@@ -496,4 +502,30 @@ public:
 	std::vector<AStreeRef> args;
 	Types*thisType;
 	AStreeRef target;
+};
+
+class ConditionExpr :public AStree
+{
+public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isCondition()override;
+	AStreeRef con;
+	AStreeRef conTrue;
+	AStreeRef conFalse;
+};
+
+class AddExpr :public AStree
+{
+public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isAdd()override;
+	Types *thisType;
+	AStreeRef left;
+	AStreeRef right;
 };

@@ -18,12 +18,13 @@ struct FunctionDef::Data
 	bool isRunning;
 };
 
-FunctionDef::FunctionDef()
+FunctionDef::FunctionDef(Types *t)
 {
 	data = new Data;
 	data->isReturn = false;
 	data->isRunning = false;
 	data->next = nullptr;
+	data->type = t;
 	data->size = data->type->toFunction()->returnType->getSize();
 	if (data->size)
 	{
@@ -127,7 +128,7 @@ FunctionDef * FunctionDef::copy()
 		return data->next;
 	}
 
-	data->next = new FunctionDef;
+	data->next = new FunctionDef(data->type);
 	data->next->data->block = data->block->copy(data->next, nullptr);
 
 	return data->next;

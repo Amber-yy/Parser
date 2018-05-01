@@ -211,6 +211,16 @@ bool AStree::isFuncall()
 	return false;
 }
 
+bool AStree::isCondition()
+{
+	return false;
+}
+
+bool AStree::isAdd()
+{
+	return false;
+}
+
 bool AStree::parseCondition(Result res)
 {
 	char *data = (char *)res.value + res.offset;
@@ -224,6 +234,16 @@ bool AStree::parseCondition(Result res)
 	}
 
 	return false;
+}
+
+AddExpr * AStree::toAdd()
+{
+	return dynamic_cast<AddExpr *>(this);
+}
+
+ConditionExpr * AStree::toCondition()
+{
+	return dynamic_cast<ConditionExpr *>(this);
 }
 
 FuncallExpr * AStree::toFuncall()
@@ -2613,7 +2633,12 @@ Result FuncallExpr::eval()
 	function->setOffset(off);
 	f->run();
 
-	return Result();
+	Result result;
+	result.value = f->getReturnValue();
+	result.offset = 0;
+	result.type = getType();
+
+	return result;
 }
 
 bool FuncallExpr::isLeftValue()
@@ -2622,6 +2647,263 @@ bool FuncallExpr::isLeftValue()
 }
 
 bool FuncallExpr::isFuncall()
+{
+	return true;
+}
+
+AStreeRef ConditionExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<ConditionExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toCondition();
+	neg->con = std::move(con->copy(fun,block));
+	neg->conTrue = std::move(con->copy(fun,block));
+	neg->conFalse = std::move(con->copy(fun,block));
+
+	return t;
+}
+
+Types * ConditionExpr::getType()
+{
+	return conTrue->getType();
+}
+
+Result ConditionExpr::eval()
+{
+	Result res = con->eval();
+	bool ok = parseCondition(res);
+
+	if (ok)
+	{
+		return conTrue->eval();
+	}
+	else
+	{
+		return conFalse->eval();
+	}
+
+	return Result();
+}
+
+bool ConditionExpr::isLeftValue()
+{
+	return false;
+}
+
+bool ConditionExpr::isCondition()
+{
+	return true;
+}
+
+AStreeRef AddExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<ConditionExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toAdd();
+	neg->thisType = thisType;
+	neg->left = std::move(left->copy(fun, block));
+	neg->right = std::move(right->copy(fun, block));
+
+	return t;
+}
+
+Types * AddExpr::getType()
+{
+	return thisType;
+}
+
+template<class T>
+T toT(Result t)
+{
+	char *s = (char *)t.value + t.offset;
+	T r;
+
+	auto *basic = t.type->toBasic();
+
+	if (basic->isFloat)
+	{
+		if (basic->size == 4)
+		{
+			r = (T)*(float *)s;
+		}
+		else
+		{
+			r = (T)*(double *)s;
+		}
+	}
+	else
+	{
+		if (basic->size == 8)
+		{
+			if (basic->isSigned)
+			{
+				r = (T)*(long long *)s;
+			}
+			else
+			{
+				r = (T)*(unsigned long long *)s;
+			}
+		}
+		else if (basic->size == 4)
+		{
+			if (basic->isSigned)
+			{
+				r = (T)*(int *)s;
+			}
+			else
+			{
+				r = (T)*(unsigned int *)s;
+			}
+		}
+		else if (basic->size == 2)
+		{
+			if (basic->isSigned)
+			{
+				r = (T)*(short *)s;
+			}
+			else
+			{
+				r = (T)*(unsigned short *)s;
+			}
+		}
+		else if (basic->size == 1)
+		{
+			if (basic->isSigned)
+			{
+				r = (T)*(char *)s;
+			}
+			else
+			{
+				r = (T)*(unsigned char *)s;
+			}
+		}
+	}
+	
+	return r;
+}
+
+void writeDouble(Result t, Types *tp,double c)
+{
+	char *s = (char *)t.value + t.offset;
+	if (tp->getSize() == 4)
+	{
+		*(float *)s = (float)c;
+		return;
+	}
+
+	*(double *)s = c;
+}
+
+void wirteLong(Result t, Types *tp, long long c)
+{
+	char *s = (char *)t.value + t.offset;
+
+	auto *basic = tp->toBasic();
+
+	if (tp->getSize() == 8)
+	{
+		if (basic->isSigned)
+		{
+			*(long long *)s = c;
+		}
+		else
+		{
+			*(unsigned long long *)s = (unsigned long long)c;
+		}
+	}
+	else if (tp->getSize() == 4)
+	{
+		if (basic->isSigned)
+		{
+			*(int *)s = (int)c;
+		}
+		else
+		{
+			*(unsigned int *)s = (unsigned int)c;
+		}
+	}
+	else if (tp->getSize() == 2)
+	{
+		if (basic->isSigned)
+		{
+			*(short *)s = (short)c;
+		}
+		else
+		{
+			*(unsigned short *)s = (unsigned short)c;
+		}
+	}
+	else if (tp->getSize() == 1)
+	{
+		if (basic->isSigned)
+		{
+			*(char *)s = (char)c;
+		}
+		else
+		{
+			*(unsigned char *)s = (unsigned char)c;
+		}
+	}
+}
+
+Result AddExpr::eval()
+{
+	Result t;
+
+	if (thisType->isPointer())
+	{
+		Result r = left->eval();
+		char *s = (char *)r.value + r.offset;
+		char *ptr = *(char **)s;
+		Result r1 = right->eval();
+		long long off = toT<long long>(r1);
+		ptr += off*left->getType()->toPointer()->targetType->getSize();
+		t.type = thisType;
+		t.value = (char *)function->getLocal() + function->getOffset();
+		t.offset = 0;
+		*(char **)t.value = ptr;
+	}
+	else
+	{
+		if (thisType->toBasic()->isFloat)
+		{
+			double a = toT<double>(left->eval());
+			double b = toT<double>(right->eval());
+
+			t.type = thisType;
+			t.value = (char *)function->getLocal() + function->getOffset();
+			t.offset = 0;
+
+			writeDouble(t, thisType,a+b);
+		}
+		else
+		{
+			long long a = toT<long long>(left->eval());
+			long long b = toT<long long>(right->eval());
+
+			t.type = thisType;
+			t.value = (char *)function->getLocal() + function->getOffset();
+			t.offset = 0;
+
+			wirteLong(t, thisType, a + b);
+		}
+	}
+
+	return t;
+}
+
+bool AddExpr::isLeftValue()
+{
+	return false;
+}
+
+bool AddExpr::isAdd()
 {
 	return true;
 }

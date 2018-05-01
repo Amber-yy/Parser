@@ -16,6 +16,7 @@ struct TypeToken;
 struct StructDef;
 struct UnionDef;
 struct EnumDef;
+struct OperatorValue;
 
 using IniRef = std::unique_ptr<IniList>;
 using AStreeRef = std::unique_ptr<AStree>;
@@ -35,6 +36,7 @@ public:
 	void addError(std::string &info);
 	void requireToken(const std::string &token);
 	void createBaseType();
+	void createBinary();
 	void getFunctionDef();
 	void getStructVariable(bool isStatic,bool isConst,Types *type,Types *constType);
 	void getStructTypedef(bool isStatic, bool isConst, Types *type, Types *constType,std::string &name);
@@ -51,6 +53,8 @@ public:
 	AStreeRef getVariableDefState(AStree *block);
 	AStreeRef getExprState(AStree *block);
 	AStreeRef getExpr(AStree *block,bool comma=true);
+	AStreeRef doShift(AStree *block,OperatorValue *op, AStreeRef left,bool comma = true);
+	AStreeRef getConditionExpr(AStree *block,AStreeRef left);
 	AStreeRef getSwitchState(AStree *block);
 	AStreeRef getIfState(AStree *block);
 	AStreeRef getWhileState(AStree *block);
@@ -60,6 +64,11 @@ public:
 	AStreeRef getReturnState(AStree *block);
 	AStreeRef getStringLiteral(AStree *block);
 	AStreeRef getBlock(FunctionDef *fun=nullptr,AStree *statement=nullptr);
+	AStreeRef makeAddExpr(AStreeRef left,AStreeRef right);
+	AStreeRef makeSubExpr(AStreeRef left, AStreeRef right);
+	AStreeRef makeMulExpr(AStreeRef left, AStreeRef right);
+	AStreeRef makeDiviExpr(AStreeRef left, AStreeRef right);
+	AStreeRef makeAssignExpr(AStreeRef left, AStreeRef right);
 	StructDef *getStructDef(int index);
 	UnionDef *getUnionDef(int index);
 	EnumDef *getEnumDef(int index);
@@ -69,6 +78,7 @@ public:
 	IniRef getIni(Types *type, AStree *block);
 	IniRef getIniCore(Types *type, AStree *block);
 	variable getVariables(Types *pre,bool typeTran=false);
+	OperatorValue *findOperator(const std::string &name,bool comma);
 	symbol *findSymbol(const std::string &name);
 	Types *peekType(bool args=false);
 	int getBasicType(std::vector<std::string> &basic);
