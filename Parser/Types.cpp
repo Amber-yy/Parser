@@ -346,7 +346,7 @@ bool PointerType::compatible(Types * tp)
 		return true;
 	}
 
-	return targetType->equal(ptr);
+	return targetType->equal(ptr->targetType);
 }
 
 std::unique_ptr<Types> PointerType::copy()

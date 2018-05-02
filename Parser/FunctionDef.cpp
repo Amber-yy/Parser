@@ -107,6 +107,8 @@ void * FunctionDef::getReturnValue()
 void FunctionDef::run()
 {
 	data->isRunning = true;
+	data->isReturn = false;
+	data->currentOffset = 0;
 	data->block->eval();
 	data->isRunning = false;
 }

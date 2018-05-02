@@ -3,6 +3,7 @@
 #include "FunctionDef.h"
 #include "Types.h"
 
+#include <iostream>
 
 Types *IntLiteralExpr::thisType;
 Types *RealLiteralExpr::thisType;
@@ -20,42 +21,42 @@ unsigned char getUchar(Result t)
 
 short getShort(Result t)
 {
-	return *((short*)(t.value) + t.offset);
+	return *(short *)((char*)(t.value) + t.offset);
 }
 
 unsigned short getUShort(Result t)
 {
-	return *((unsigned short*)(t.value) + t.offset);
+	return *(unsigned short *)((char*)(t.value) + t.offset);
 }
 
 int getInt(Result t)
 {
-	return *((int*)(t.value) + t.offset);
+	return *(int *)((char*)(t.value) + t.offset);
 }
 
 unsigned int getUInt(Result t)
 {
-	return *((unsigned int*)(t.value) + t.offset);
+	return *(unsigned int *)((char*)(t.value) + t.offset);
 }
 
 long long getLong(Result t)
 {
-	return *((long long*)(t.value) + t.offset);
+	return *(long long *)((char*)(t.value) + t.offset);
 }
 
 long long getULong(Result t)
 {
-	return *((unsigned long long*)(t.value) + t.offset);
+	return *(unsigned long long *)((char*)(t.value) + t.offset);
 }
 
 float getFloat(Result t)
 {
-	return *((float*)(t.value) + t.offset);
+	return *(float *)((char*)(t.value) + t.offset);
 }
 
 double getDouble(Result t)
 {
-	return *((double*)(t.value) + t.offset);
+	return *(double *)((char*)(t.value) + t.offset);
 }
 
 Parser * AStree::parser;
@@ -1183,8 +1184,16 @@ EvalValue IniList::eval()
 {	
 	if (nexts.size() == 0)
 	{
-		Result t = expr->eval();
-		return AStree::cast(t, type);
+		if (expr.get() != nullptr)
+		{
+			Result t = expr->eval();
+			return AStree::cast(t, type);
+		}
+		EvalValue v;
+		v.type = type;
+		v.buffer = new char[type->getSize()];
+		memset(v.buffer, 0, type->getSize());
+		return v;
 	}
 
 	EvalValue v;
@@ -2587,7 +2596,9 @@ Result FuncallExpr::eval()
 	FunctionDef *f;
 	if (target->getType()->isFunction())
 	{
-		f = (FunctionDef *)((char *)foo.value + foo.offset);
+		char *s = (char *)foo.value + foo.offset;
+		char *v = *(char **)s;
+		f = (FunctionDef *)v;
 	}
 	else
 	{
@@ -2603,8 +2614,7 @@ Result FuncallExpr::eval()
 
 	int off = function->getOffset();
 	f->setStack((char *)function->getStack() + off);
-
-	FunctionType *ft = thisType->toFunction();
+	FunctionType *ft =f->getType()->toFunction();
 
 	int i;
 	for (i = 0; i < ft->args.size(); ++i)
@@ -2614,7 +2624,6 @@ Result FuncallExpr::eval()
 		{
 			break;
 		}
-
 		Result r = args[i]->eval();
 		auto vv = cast(r, ft->argsType[i]);
 		f->addArgValue(vv.buffer, ft->argsType[i]->getSize());
@@ -2627,7 +2636,7 @@ Result FuncallExpr::eval()
 		int ofs = function->getOffset();
 		Result r=args[i]->eval();
 		f->addArgValue((char *)r.value+r.offset, r.type->getSize());
-		function->setOffset(ofs + ft->argsType[i]->getSize());
+		function->setOffset(ofs + r.type->getSize());
 	}
 
 	function->setOffset(off);

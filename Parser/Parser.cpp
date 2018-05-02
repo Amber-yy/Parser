@@ -192,6 +192,31 @@ void Parser::parse(const std::string &file)
 
 	}
 
+	for (auto s : data->globalRegion.values)
+	{
+		if (!s.second.isDefined)
+		{
+			std::cout << "有未定义的符号";
+			break;
+		}
+	}
+
+	for (auto s : data->staticRegion.values)
+	{
+		if (!s.second.isDefined)
+		{
+			std::cout << "有未定义的符号";
+			break;
+		}
+	}
+
+	FunctionDef *MainFun = data->allFunctions[data->mainIndex].get();
+	
+	MainFun->setStack(data->stack);
+	MainFun->run();
+
+	std::cout<<*(int *)MainFun->getReturnValue();
+
 	int a;
 	a = 10;
 }
@@ -1262,6 +1287,17 @@ void Parser::parseVariable()
 				foo->setType(t.type);
 				FunctionDef *fptr = foo.get();
 				data->allFunctions.push_back(std::move(foo));
+				if (v.name == "main")
+				{
+					if (data->mainIndex == -1)
+					{
+						data->mainIndex = data->allFunctions.size() - 1;
+					}
+					else
+					{
+						addError(std::string("重定义的main函数"));
+					}
+				}
 
 				region->values.insert(std::pair<std::string, Value>(v.name, val));
 				data->symbols[index].insert(std::pair<std::string, symbol>(v.name, t));
@@ -2041,7 +2077,7 @@ AStreeRef Parser::getAtomic(AStree * block)
 		}
 		else if(data->token.peek(0).getString() == "[")
 		{
-			if (!neg->getType()->isPointer() || !neg->getType()->isArray())
+			if (!neg->getType()->isPointer() && !neg->getType()->isArray())
 			{
 				addError(std::string("必须具有指针或数组类型"));
 			}
@@ -2272,15 +2308,15 @@ AStreeRef Parser::getAtomic(AStree * block)
 			requireToken("(");
 			bool more = false;
 
-			for (int i = 0;; ++i)
+			for (int i = 0;i<fun->argsType.size(); ++i)
 			{
-				AStreeRef arg = getExpr(block,false);
-
 				if (fun->argsType[i] == nullptr)
 				{
 					more = true;
 					break;
 				}
+
+				AStreeRef arg = getExpr(block, false);
 
 				if (!fun->argsType[i]->compatible(arg->getType()))
 				{
@@ -2318,6 +2354,7 @@ AStreeRef Parser::getAtomic(AStree * block)
 			}
 
 			requireToken(")");
+			neg = std::move(mem);
 		}
 		else
 		{
@@ -2526,9 +2563,17 @@ AStreeRef Parser::getStatement(AStree * block)
 	{
 		return getBlock(data->currentFunction,block);
 	}
-	else if(data->token.peek(0).isKeyWord()||!findSymbol(data->token.peek(0).getString())->isVariable)
+	else if(data->token.peek(0).isKeyWord())
 	{
 		return getVariableDefState(block);
+	}
+	else
+	{
+		symbol *s = findSymbol(data->token.peek(0).getString());
+		if (s && !s->isVariable)
+		{
+			return getVariableDefState(block);
+		}
 	}
 
 	return getExprState(block);
@@ -2587,7 +2632,7 @@ AStreeRef Parser::getVariableDefState(AStree * block)
 		t.isDefined = true;
 		t.isVariable = true;
 		t.isStatic = tp->isStatic;
-		t.type = tp;
+		t.type = v.type;
 
 		data->symbols[data->currentLevel].insert(std::pair<std::string, symbol>(v.name, t));
 
@@ -2596,6 +2641,7 @@ AStreeRef Parser::getVariableDefState(AStree * block)
 		id->block = block;
 		IdExpr *ie = id->toIdExpr();
 		ie->offset = t.offSet;
+		ie->thisType = v.type;
 
 		if (t.isStatic)
 		{
@@ -2609,6 +2655,10 @@ AStreeRef Parser::getVariableDefState(AStree * block)
 		vds->id.push_back(std::move(id));
 		vds->value.push_back(getIni(t.type, block));
 
+		if (data->token.peek(0).getString() != ";")
+		{
+			requireToken(",");
+		}
 		one = true;
 	}
 
@@ -2812,11 +2862,11 @@ AStreeRef Parser::getIfState(AStree * block)
 	requireToken(")");
 
 	ifs->condition = std::move(con);
-	ifs->conTrue = getExpr(block);
+	ifs->conTrue = getStatement(block);
 	if (data->token.peek(0).getString() == "else")
 	{
 		data->token.read();
-		ifs->conFalse = getExpr(block);
+		ifs->conFalse = getStatement(block);
 	}
 
 	return rs;
@@ -3045,7 +3095,7 @@ AStreeRef Parser::getBlock(FunctionDef * fun, AStree * statement)
 		FunctionType *type = fun->getType()->toFunction();
 		int currentOffset = 0;
 
-		for (int i = 0; i < type->args.size();)
+		for (int i = 0; i < type->args.size();++i)
 		{
 			if (!type->args[i].empty()&&type->argsType[i])
 			{
@@ -3146,8 +3196,8 @@ AStreeRef Parser::makeAddExpr(AStreeRef left, AStreeRef right)
 
 		BasicType *fl=left->getType()->toBasic();
 		BasicType *fr = right->getType()->toBasic();
-		add1->left = std::move(right);
-		add1->right = std::move(left);
+		add1->left = std::move(left);
+		add1->right = std::move(right);
 
 		if (fl->isFloat)
 		{
@@ -3509,12 +3559,14 @@ IniRef Parser::getIniCore(Types * type,AStree *block)
 		{
 			addError(std::string("不兼容的类型"));
 		}
+		t->type = type;
 		return t;
 	}
 	else if (type->isPointer())
 	{
 		auto ptr = type->toPointer();
 		IniRef t = std::make_unique<IniList>();
+		t->type = type;
 
 		if (ptr->targetType->isBasic() && ptr->targetType->getSize() == 1 && data->token.peek(0).isStringLiteral())
 		{
@@ -3533,6 +3585,7 @@ IniRef Parser::getIniCore(Types * type,AStree *block)
 	{
 		auto arr = type->toArray();
 		IniRef t = std::make_unique<IniList>();
+		t->type = type;
 
 		if (arr->dataType->isBasic() && arr->dataType->getSize() == 1 && data->token.peek(0).isStringLiteral())
 		{
@@ -3576,6 +3629,7 @@ IniRef Parser::getIniCore(Types * type,AStree *block)
 	{
 		auto str = type->toStruct();
 		IniRef t = std::make_unique<IniList>();
+		t->type = type;
 		bool isBaracket = false;
 
 		if (data->token.peek(0).getString() == "{")
@@ -3728,11 +3782,6 @@ variable Parser::getVariables(Types *pre,bool typeTran)
 		{
 			addError(std::string("不能定义此类型的变量"));
 		}
-	}
-
-	if (!t.type->isFunction() &&!data->token.peek(0).isEos())
-	{
-		requireToken(",");
 	}
 
 	return t;
@@ -3960,7 +4009,6 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name,int
 				}
 				else if(instr!=")")
 				{
-
 					while (true)
 					{
 						data->argTokens.clear();
@@ -4012,26 +4060,32 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name,int
 
 						if (data->argTokens.size() == 3)
 						{
+							bool isdot = false;
 							bool flag = true;
 							for (auto it = data->argTokens.begin(); it != data->argTokens.end(); ++it)
 							{
 								if (it->token->getString() != ".")
 								{
 									flag = false;
-									break;
+								}
+								else
+								{
+									isdot = true;
 								}
 							}
 
-							if (!flag)
+							if (isdot&&!flag)
 							{
 								addError(std::string("错误的参数类型"));
 							}
 
-							f->args.push_back("");
-							f->argsType.push_back(nullptr);
-							break;
+							if (isdot)
+							{
+								f->args.push_back("");
+								f->argsType.push_back(nullptr);
+								break;
+							}
 						}
-
 
 						Types *tp = peekType(true);
 						variable t;
@@ -4080,7 +4134,7 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name,int
 							break;
 						}
 					}
-					
+
 				}
 
 				auto i1 = in;
@@ -4104,7 +4158,6 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name,int
 
 				return result;
 			}
-
 		}
 		else if (str == "[")
 		{
@@ -4395,7 +4448,14 @@ Types * Parser::peekType(bool args)
 		}
 		else
 		{
-			data->token.unRead();
+			if (!args)
+			{
+				data->token.unRead();
+			}
+			else
+			{
+				--it;
+			}
 			break;
 		}
 	}
