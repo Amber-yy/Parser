@@ -343,8 +343,16 @@ IdExpr * AStree::toIdExpr()
 }
 
 template<class T>
-void doCast(EvalValue v,Result t,BasicType *bs)
+void doCast(EvalValue v,Result t,Types *tp)
 {
+	if (!tp->isBasic())
+	{
+		*(T *)v.buffer = getInt(t);
+		return;
+	}
+
+	BasicType *bs = tp->toBasic();
+
 	if (bs->isFloat)
 	{
 		if (bs->size == 4)
@@ -415,7 +423,7 @@ EvalValue AStree::cast(Result t, Types * target)
 
 	if (target->isBasic())
 	{
-		BasicType *bs = t.type->toBasic();
+		Types *bs=t.type;
 		BasicType *bt = target->toBasic();
 
 		if (bt->isFloat)
@@ -1781,7 +1789,17 @@ Result GetAddrExpr::eval()
 
 	int off = function->getOffset();
 	char *local = (char *)function->getLocal() + off;//指针指向栈空间
-	char *add = (char *)t.value + t.offset;//这个地方是数组首元素的地址，也应该是数组的地址
+	char *add;
+	if (target->getType()->isArray())
+	{
+		add = (char *)t.value + t.offset;//数组的求值得到一个地址，地址存放于此地址
+		char *t = *(char **)add;
+		add = t;
+	}
+	else
+	{
+		add = (char *)t.value + t.offset;//这个地方是目标的地址
+	}
 	*(char **)local = add;//把栈空间强转为二级指针，并赋值为数组地址
 	t.value = local;
 	t.offset = 0;
@@ -2408,8 +2426,9 @@ Result ArrayAccessExpr::eval()
 	}
 
 	char *s = (char *)t.value + t.offset;//指针本身的地址，是一个二级指针
-	r.value = *(char **)s+id*t.type->getSize();//解除引用二级指针，得到指针的值
-	r.offset = 0;//没有偏移
+	char *ptr = *(char **)s;//解除引用二级指针，得到指针的值
+	r.value = ptr+id*getType()->getSize();//重新计算偏移
+	r.offset = 0;//这一层没有偏移
 
 	if (r.type->isArray())//如果解除引用的目标是数组，还需要进一步处理，使返回的值是地址
 	{

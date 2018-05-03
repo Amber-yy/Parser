@@ -893,7 +893,7 @@ void Tokenizer::getStringLiteral()
 	{
 		char temp = getChar();
 
-		if (temp == -1||'\n')
+		if (temp == -1||temp=='\n')
 		{
 			break;
 		}

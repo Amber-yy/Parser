@@ -145,7 +145,7 @@ bool BasicType::isBasic()
 
 int BasicType::getSize()
 {
-	return 4;
+	return size;
 }
 
 bool BasicType::canInstance()
@@ -346,7 +346,21 @@ bool PointerType::compatible(Types * tp)
 		return true;
 	}
 
-	return targetType->equal(ptr->targetType);
+	bool isS = targetType->isStatic;
+	targetType->isStatic=ptr->targetType->isStatic;
+
+	bool isC = targetType->isConst;
+	if (isC && !ptr->targetType->isConst)
+	{
+		targetType->isConst = false;
+	}
+
+	bool ok= targetType->equal(ptr->targetType);
+
+	targetType->isStatic = isS;
+	targetType->isConst = isC;
+
+	return ok;
 }
 
 std::unique_ptr<Types> PointerType::copy()

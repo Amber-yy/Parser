@@ -2505,7 +2505,7 @@ AStreeRef Parser::getPrimary(AStree *block)
 
 	if (data->token.peek(0).getString() == "("&&data->token.peek(1).isKeyWord() || (t&&t->isVariable))
 	{
-		requireToken(")");
+		requireToken("(");
 		Types *pre = peekType();
 		variable v = getVariables(pre, true);
 		requireToken(")");
@@ -3580,6 +3580,7 @@ IniRef Parser::getIniCore(Types * type,AStree *block)
 			addError(std::string("不兼容的类型"));
 		}
 
+		return t;
 	}
 	else if (type->isArray())
 	{
@@ -3624,6 +3625,8 @@ IniRef Parser::getIniCore(Types * type,AStree *block)
 		{
 			requireToken("}");
 		}
+
+		return t;
 	}
 	else if (type->isStruct())
 	{
