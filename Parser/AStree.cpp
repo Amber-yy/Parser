@@ -347,7 +347,7 @@ void doCast(EvalValue v,Result t,Types *tp)
 {
 	if (!tp->isBasic())
 	{
-		*(T *)v.buffer = getInt(t);
+		*(T *)v.buffer = (T)getInt(t);
 		return;
 	}
 
@@ -357,11 +357,11 @@ void doCast(EvalValue v,Result t,Types *tp)
 	{
 		if (bs->size == 4)
 		{
-			*(T *)v.buffer = getFloat(t);
+			*(T *)v.buffer = (T)getFloat(t);
 		}
 		else
 		{
-			*(T *)v.buffer = getDouble(t);
+			*(T *)v.buffer = (T)getDouble(t);
 		}
 	}
 	else
@@ -370,44 +370,44 @@ void doCast(EvalValue v,Result t,Types *tp)
 		{
 			if (bs->isSigned)
 			{
-				*(T *)v.buffer = getChar(t);
+				*(T *)v.buffer = (T)getChar(t);
 			}
 			else
 			{
-				*(float *)v.buffer = getUchar(t);
+				*(T *)v.buffer = (T)getUchar(t);
 			}
 		}
 		else if (bs->size == 2)
 		{
 			if (bs->isSigned)
 			{
-				*(T *)v.buffer = getShort(t);
+				*(T *)v.buffer = (T)getShort(t);
 			}
 			else
 			{
-				*(T *)v.buffer = getUShort(t);
+				*(T *)v.buffer = (T)getUShort(t);
 			}
 		}
 		else if (bs->size == 4)
 		{
 			if (bs->isSigned)
 			{
-				*(T *)v.buffer = getInt(t);
+				*(T *)v.buffer = (T)getInt(t);
 			}
 			else
 			{
-				*(T *)v.buffer = getUInt(t);
+				*(T *)v.buffer = (T)getUInt(t);
 			}
 		}
 		else if (bs->size == 8)
 		{
 			if (bs->isSigned)
 			{
-				*(T *)v.buffer = getLong(t);
+				*(T *)v.buffer = (T)getLong(t);
 			}
 			else
 			{
-				*(T *)v.buffer = getULong(t);
+				*(T *)v.buffer = (T)getULong(t);
 			}
 		}
 	}
@@ -1094,6 +1094,8 @@ Result ForState::eval()
 		ini->eval();
 	}
 
+	isBreak = false;
+
 	for (;;)
 	{
 		state->eval();
@@ -1586,7 +1588,7 @@ Types * PreDecExpr::getType()
 template<class T>
 void Dec(void *a)
 {
-	*(T *)a += 1;
+	*(T *)a -= 1;
 }
 
 Result PreDecExpr::eval()
@@ -1976,6 +1978,7 @@ Result SizeOfExpr::eval()
 	r.value = (char *)function->getLocal() + function->getOffset();
 	r.offset = 0;
 	*(int *)r.value =size;
+	r.type = thisType;
 	return r;
 }
 

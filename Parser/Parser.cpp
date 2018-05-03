@@ -2522,7 +2522,7 @@ AStreeRef Parser::getPrimary(AStree *block)
 	return getAtomic(block);
 }
 
-AStreeRef Parser::getStatement(AStree * block)
+AStreeRef Parser::getStatement(AStree *block)
 {
 	if (data->token.peek(0).getString() == ";")
 	{
@@ -2766,15 +2766,16 @@ AStreeRef Parser::getSwitchState(AStree * block)
 {
 	int offset = data->currentOffset;
 	++data->currentLevel;
-	if (data->symbols.size() < data->currentLevel)
+	if (data->symbols.size() <= data->currentLevel)
 	{
-		data->symbols.resize(data->currentLevel);
+		data->symbols.resize(data->currentLevel+1);
 	}
 	data->symbols[data->currentLevel].clear();
 
 	AStreeRef rs = std::make_unique<SwitchState>();
 	rs->function = data->currentFunction;
 	rs->block = block;
+	rs->type = SwitchBlock;
 	SwitchState *sw = rs->toSwitchState();
 
 	requireToken("switch");
@@ -2832,7 +2833,8 @@ AStreeRef Parser::getSwitchState(AStree * block)
 				break;
 			}
 
-			sw->states[index].push_back(getStatement(sw));
+			AStree *ptr = sw;
+			sw->states[index].push_back(getStatement(ptr));
 		}
 
 	}
@@ -2878,6 +2880,7 @@ AStreeRef Parser::getWhileState(AStree * block)
 	AStreeRef rs = std::make_unique<WhileState>();
 	rs->function = data->currentFunction;
 	rs->block = block;
+	rs->type = LoopBlock;
 	WhileState *ws = rs->toWhileState();
 
 	requireToken("(");
@@ -2890,11 +2893,7 @@ AStreeRef Parser::getWhileState(AStree * block)
 	requireToken(")");
 
 	ws->condition = std::move(con);
-	ws->state = getStatement(block);
-	if (ws->state->isBlock())
-	{
-		ws->state->toBlock()->type = LoopBlock;
-	}
+	ws->state = getStatement(ws);
 
 	return rs;
 }
@@ -2905,13 +2904,10 @@ AStreeRef Parser::getDoWhileState(AStree * block)
 	AStreeRef rs = std::make_unique<DoWhileState>();
 	rs->function = data->currentFunction;
 	rs->block = block;
+	rs->type = LoopBlock;
 	DoWhileState *ws = rs->toDoWhileState();
 
-	ws->state = getStatement(block);
-	if (ws->state->isBlock())
-	{
-		ws->state->toBlock()->type = LoopBlock;
-	}
+	ws->state = getStatement(ws);
 
 	requireToken("while");
 	requireToken("(");
@@ -2932,15 +2928,16 @@ AStreeRef Parser::getForState(AStree * block)
 {
 	int offset = data->currentOffset;
 	++data->currentLevel;
-	if (data->symbols.size() < data->currentLevel)
+	if (data->symbols.size() <= data->currentLevel)
 	{
-		data->symbols.resize(data->currentLevel);
+		data->symbols.resize(data->currentLevel+1);
 	}
 	data->symbols[data->currentLevel].clear();
 
 	AStreeRef rs = std::make_unique<ForState>();
 	rs->function = data->currentFunction;
 	rs->block = block;
+	rs->type = LoopBlock;
 	ForState *f = rs->toForState();
 
 	requireToken("for");
@@ -2980,15 +2977,12 @@ AStreeRef Parser::getForState(AStree * block)
 
 	requireToken(")");
 
-	f->state = getStatement(block);
-	if (f->state->isBlock())
-	{
-		f->state->toBlock()->type = LoopBlock;
-	}
+	f->state=getStatement(f);
 
 	data->currentOffset = offset;
 	--data->currentLevel;
-	return AStreeRef();
+
+	return rs;
 }
 
 AStreeRef Parser::getBreakState(AStree * block)
@@ -2996,7 +2990,7 @@ AStreeRef Parser::getBreakState(AStree * block)
 	requireToken("break");
 	requireToken(";");
 
-	AStreeRef rs = std::make_unique<DoWhileState>();
+	AStreeRef rs = std::make_unique<BreakState>();
 	rs->function = data->currentFunction;
 	rs->block = block;
 
@@ -3077,10 +3071,15 @@ AStreeRef Parser::getBlock(FunctionDef * fun, AStree * statement)
 {
 	int offset = data->currentOffset;
 	bool ok = true;
+	bool loop = false;
 
 	if (statement != nullptr)
 	{
-		ok = false;
+		if (statement->isForState() || statement->isSwitchState())
+		{
+			ok = false;
+		}
+		loop = true;
 	}
 	else if (fun != nullptr)
 	{
@@ -3130,6 +3129,10 @@ AStreeRef Parser::getBlock(FunctionDef * fun, AStree * statement)
 	AStreeRef block = std::make_unique<Block>();
 	Block *blk = block->toBlock();
 	blk->function = data->currentFunction;
+	if (loop)
+	{
+		block->block = statement;
+	}
 
 	while (data->token.peek(0).getString() != "}")
 	{

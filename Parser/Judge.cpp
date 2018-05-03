@@ -17,7 +17,7 @@ bool isLetter(char c)
 
 bool isIdStart(char c)
 {
-	return isLetter(c) || c == '-';
+	return isLetter(c) || c == '_';
 }
 
 bool isHexNumber(char c)
