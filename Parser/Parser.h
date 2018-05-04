@@ -20,6 +20,7 @@ struct OperatorValue;
 
 using IniRef = std::unique_ptr<IniList>;
 using AStreeRef = std::unique_ptr<AStree>;
+typedef char *(*LibFunction)(void *,int);
 
 class Parser
 {
@@ -27,6 +28,7 @@ public:
 	Parser();
 	~Parser();
 	void parse(const std::string &file);
+	void run();
 	void getLine();
 	void getStruct(bool isTypedef=false);
 	void getUnion(bool isTypedef = false);
@@ -37,7 +39,9 @@ public:
 	void requireToken(const std::string &token);
 	void createBaseType();
 	void createBinary();
+	void createLib();
 	void getFunctionDef();
+	void addLibFunction(const std::string &name,LibFunction fun);
 	void getStructVariable(bool isStatic,bool isConst,Types *type,Types *constType);
 	void getStructTypedef(bool isStatic, bool isConst, Types *type, Types *constType,std::string &name);
 	void getUnionVariable(bool isStatic, bool isConst, Types *type, Types *constType);
@@ -69,6 +73,7 @@ public:
 	AStreeRef makeMulExpr(AStreeRef left, AStreeRef right);
 	AStreeRef makeDiviExpr(AStreeRef left, AStreeRef right);
 	AStreeRef makeAssignExpr(AStreeRef left, AStreeRef right);
+	AStreeRef makeLess(AStreeRef left, AStreeRef right);
 	StructDef *getStructDef(int index);
 	UnionDef *getUnionDef(int index);
 	EnumDef *getEnumDef(int index);

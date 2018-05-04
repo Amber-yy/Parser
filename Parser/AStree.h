@@ -36,6 +36,7 @@ class MemberAccessPtr;
 class FuncallExpr;
 class ConditionExpr;
 class AddExpr;
+class LessExpr;
 
 enum BlockType
 {
@@ -65,6 +66,7 @@ struct EvalValue
 	void release()
 	{
 		delete[]buffer;
+		buffer = nullptr;
 	}
 	char *buffer;
 	Types *type;
@@ -114,7 +116,9 @@ public:
 	virtual bool isFuncall();
 	virtual bool isCondition();
 	virtual bool isAdd();
+	virtual bool isLess();
 	bool parseCondition(Result t);
+	LessExpr *toLess();
 	AddExpr *toAdd();
 	ConditionExpr *toCondition();
 	FuncallExpr *toFuncall();
@@ -526,6 +530,20 @@ public:
 	virtual bool isLeftValue()override;
 	virtual bool isAdd()override;
 	Types *thisType;
+	AStreeRef left;
+	AStreeRef right;
+};
+
+class LessExpr :public AStree
+{
+public:
+	static Types *thisType;
+public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isLess()override;
 	AStreeRef left;
 	AStreeRef right;
 };

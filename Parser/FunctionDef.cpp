@@ -9,6 +9,7 @@ struct FunctionDef::Data
 	AStreeRef block;	
 	Types *type;
 	FunctionDef *next;
+	LibFunction lib;
 	void *stack;
 	void *local;
 	void *returnValue;
@@ -26,6 +27,7 @@ FunctionDef::FunctionDef(Types *t)
 	data->next = nullptr;
 	data->type = t;
 	data->size = data->type->toFunction()->returnType->getSize();
+	data->lib = nullptr;
 	if (data->size)
 	{
 		data->returnValue = new char[data->size];
@@ -99,6 +101,11 @@ void FunctionDef::setReturnValue(void * s)
 	memcpy(data->returnValue, s, data->size);
 }
 
+void * FunctionDef::setLib(LibFunction fun)
+{
+	return data->lib=fun;
+}
+
 void * FunctionDef::getReturnValue()
 {
 	return data->returnValue;
@@ -109,7 +116,18 @@ void FunctionDef::run()
 	data->isRunning = true;
 	data->isReturn = false;
 	data->currentOffset = 0;
-	data->block->eval();
+	if (data->lib)
+	{
+		char *a = (char *)data->stack;
+		char *b = (char *)data->local;
+		char *buffer=data->lib(data->stack, b-a);
+		memcpy(data->returnValue, buffer, data->size);
+		delete[]buffer;
+	}
+	else
+	{
+		data->block->eval();
+	}
 	data->isRunning = false;
 }
 

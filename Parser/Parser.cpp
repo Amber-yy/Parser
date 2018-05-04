@@ -7,6 +7,7 @@
 #include "AStree.h"
 
 #include <iostream>
+#include <ctime>
 #include <memory>
 #include <list>
 #include <map>
@@ -35,6 +36,12 @@ enum ParseType
 	UNION,
 	ENUM,
 	VARIABLE,
+};
+
+struct LibFunctionData
+{
+	Types *tp;
+	LibFunction target;
 };
 
 struct TypeToken
@@ -96,11 +103,12 @@ struct Region
 	{
 		if (v.type->getSize() + currentOffset > dataSize)
 		{
-			dataSize *= 2;
+			throw std::exception("全局/静态区占用空间太大，请修改代码或重新设置全局/静态区大小");
+			/*dataSize *= 2;
 			char *temp = new char[dataSize];
 			memcpy(temp, data, dataSize / 2);
 			delete[] data;
-			data = temp;
+			data = temp;*/
 		}
 
 		memcpy(data + currentOffset, v.buffer, v.type->getSize());
@@ -128,6 +136,7 @@ struct Parser::Data
 	std::vector<std::string>vName;
 	std::vector<FunctionDefRef> allFunctions;
 	std::map<std::string, OperatorValue> allBinary;
+	std::map<std::string, LibFunctionData> libFunctions;
 	std::list<TypeToken> argTokens;
 	FunctionDef *currentFunction;
 	char *stack;
@@ -148,6 +157,7 @@ Parser::Parser()
 	data->stack=new char[1024*1024*2];//2m的栈空间
 	createBaseType();
 	createBinary();
+	createLib();
 }
 
 Parser::~Parser()
@@ -192,30 +202,50 @@ void Parser::parse(const std::string &file)
 
 	}
 
-	for (auto s : data->globalRegion.values)
-	{
-		if (!s.second.isDefined)
-		{
-			std::cout << "有未定义的符号";
-			break;
-		}
-	}
-
 	for (auto s : data->staticRegion.values)
 	{
 		if (!s.second.isDefined)
 		{
-			std::cout << "有未定义的符号";
+			addError(std::string("有未定义的静态符号"));
 			break;
 		}
 	}
 
+	for (auto s : data->globalRegion.values)
+	{
+		if (!s.second.isDefined)
+		{
+			if (s.second.type->isFunction())
+			{
+				int n = s.second.offSet;
+				char *x = (char *)data->globalRegion.data + n;
+				FunctionDef *foo = *(FunctionDef **)x;
+				auto it = data->libFunctions.find(s.first);
+				if (it == data->libFunctions.end() || !it->second.tp->equal(s.second.type))
+				{
+					addError(std::string("有未定义的全局符号") + s.first);
+				}
+				foo->setLib(it->second.target);
+			}
+			else
+			{
+				addError(std::string("有未定义的全局符号") + s.first);
+			}
+		}
+
+	}
+
+}
+
+void Parser::run()
+{
 	FunctionDef *MainFun = data->allFunctions[data->mainIndex].get();
-	
+	//time_t start = clock();
 	MainFun->setStack(data->stack);
 	MainFun->run();
-
-	std::cout<<*(int *)MainFun->getReturnValue();
+	//time_t end = clock();
+	//std::cout << end - start << '\n';
+	//std::cout<<*(int *)MainFun->getReturnValue();
 
 	int a;
 	a = 10;
@@ -1169,7 +1199,7 @@ void Parser::parseVariable()
 					}
 				}
 
-				VariableValue vv = getConstIni(tp);
+				VariableValue vv = getConstIni(v.type);
 				if (vv.buffer == nullptr)
 				{
 					vv.buffer = new char[tp->getSize()];
@@ -1229,6 +1259,8 @@ void Parser::parseVariable()
 		}
 		else
 		{
+			FunctionType *foo=v.type->toFunction();
+
 			int index;
 			Region *region;
 
@@ -1340,7 +1372,12 @@ void Parser::parseVariable()
 
 void Parser::addError(std::string & info)
 {
-	throw std::to_string(data->token.peek(0).getLine()) +info;
+	if (data->token.hasMore())
+	{
+		throw std::to_string(data->token.peek(0).getLine()) + info;
+	}
+	data->token.unRead();
+	throw std::to_string(data->token.peek(0).getLine()) + info;
 }
 
 void Parser::requireToken(const std::string & token)
@@ -1401,15 +1438,15 @@ void Parser::createBaseType()
 	usInt2->size = 4;
 
 	BasicRef sLongLong1 = std::make_unique<BasicType>();
-	sLongLong1->size = 4;
+	sLongLong1->size = 8;
 	BasicRef sLongLong2= std::make_unique<BasicType>();
-	sLongLong2->size = 4;
+	sLongLong2->size = 8;
 	sLongLong2->isConst = true;
 	BasicRef usLongLong1 = std::make_unique<BasicType>();
-	usLongLong1->size = 4;
+	usLongLong1->size = 8;
 	usLongLong1->isSigned = false;
 	BasicRef usLongLong2 = std::make_unique<BasicType>();
-	usLongLong2->size = 4;
+	usLongLong2->size = 8;
 	usLongLong2->isConst = true;
 	usLongLong2->isSigned = false;
 
@@ -1471,6 +1508,80 @@ void Parser::createBinary()
 	data->allBinary.insert(std::pair<std::string, OperatorValue>("*", createOperator(&Parser::makeMulExpr, 3, true)));
 	data->allBinary.insert(std::pair<std::string, OperatorValue>("/", createOperator(&Parser::makeDiviExpr, 3, true)));
 	data->allBinary.insert(std::pair<std::string, OperatorValue>("=", createOperator(&Parser::makeAssignExpr, 14, false)));
+	data->allBinary.insert(std::pair<std::string, OperatorValue>("<", createOperator(&Parser::makeLess, 6, true)));
+}
+
+char *print(void *buffer,int size)
+{
+	char *result = new char[4];
+
+	char *s = *(char **)buffer;
+	char *start = (char *)buffer;
+	start+=4;
+	*(int *)result=_vfprintf_l(stdout, s, NULL, start);
+
+	return result;
+}
+
+char *scan(void *buffer, int size)
+{
+	char *result = new char[4];
+
+	char *s = *(char **)buffer;
+	char *start = (char *)buffer;
+	start += 4;
+	*(int *)result = _vfscanf_l(stdin, s, NULL, start);
+
+	return result;
+}
+
+char *Allocate(void *buffer, int size)
+{
+	char *result = new char[4];
+
+	int size = *(int *)buffer;
+	*(void **)result = malloc(size);
+
+	return result;
+}
+
+char *Collect(void *buffer, int size)
+{
+	char *result = new char[4];
+
+	void * block = *(void **)buffer;
+	free(block);
+
+	return result;
+}
+
+void Parser::createLib()
+{
+	/*printf函数*/
+	{
+		TypeRef t = std::make_unique<FunctionType>();
+		auto *foo = t->toFunction();
+		foo->returnType = data->allTypes[10].get();
+
+		TypeRef ptr = std::make_unique<PointerType>();
+		auto *ptr1 = ptr->toPointer();
+		ptr1->targetType = data->allTypes[3].get();
+
+		foo->argsType.push_back(ptr.get());
+		foo->argsType.push_back(nullptr);
+		data->allTypes.push_back(std::move(t));
+		data->allTypes.push_back(std::move(ptr));
+
+		data->libFunctions.insert(std::pair<std::string, LibFunctionData>("printf", {foo,&print}));
+		data->libFunctions.insert(std::pair<std::string, LibFunctionData>("scanf", { foo,&scan}));
+	}
+	{
+		
+	
+	}
+
+
+
 }
 
 void Parser::getFunctionDef()
@@ -1478,6 +1589,12 @@ void Parser::getFunctionDef()
 	data->currentOffset = 0;
 	data->currentLevel = 1;
 	data->currentFunction->setBlock(getBlock(data->currentFunction));
+}
+
+void Parser::addLibFunction(const std::string & name, LibFunction fun)
+{
+	auto it=data->libFunctions.find(name);
+	it->second.target = fun;
 }
 
 void Parser::getStructVariable(bool isStatic, bool isConst, Types * type, Types * constType)
@@ -1885,7 +2002,9 @@ AStreeRef Parser::getAtomic(AStree * block)
 		SizeOfExpr *soe = neg->toSizeOf();
 		requireToken("(");
 		
-		if (data->token.peek(0).isKeyWord() || !findSymbol(data->token.peek(0).getString())->isVariable)
+		symbol *name = findSymbol(data->token.peek(0).getString());
+
+		if (data->token.peek(0).isKeyWord() || name&&!name->isVariable)
 		{
 			Types *pre = peekType();
 			variable v = getVariables(pre, true);
@@ -1897,7 +2016,12 @@ AStreeRef Parser::getAtomic(AStree * block)
 		}
 		else
 		{
-			soe->size = getExpr(block)->getType()->getSize();
+			Types *t=getExpr(block)->getType();
+			if (!t->canInstance())
+			{
+				addError(std::string("不允许使用不完整的类型"));
+			}
+			soe->size = t->getSize();
 		}
 
 		requireToken(")");
@@ -1911,7 +2035,7 @@ AStreeRef Parser::getAtomic(AStree * block)
 
 		IntLiteralExpr *ile = neg->toIntLiteral();
 		ile->value = data->token.read().getInteger();
-		ile->thisType = data->allTypes[16].get();
+		ile->thisType = data->allTypes[15].get();
 	}
 	else if (data->token.peek(0).isRealLiteral())
 	{
@@ -2362,6 +2486,11 @@ AStreeRef Parser::getAtomic(AStree * block)
 		}
 	}
 
+	if (!neg.get())
+	{
+		addError(std::string("应输入表达式"));
+	}
+
 	return neg;
 }
 
@@ -2756,8 +2885,16 @@ AStreeRef Parser::getConditionExpr(AStree * block, AStreeRef left)
 	con->con = std::move(left);
 	requireToken("?");
 	con->conTrue = getExpr(block);
+	if (con->conTrue.get() == nullptr)
+	{
+		addError(std::string("应输入表达式"));
+	}
 	requireToken(":");
 	con->conFalse = getExpr(block);
+	if (con->conFalse.get() == nullptr)
+	{
+		addError(std::string("应输入表达式"));
+	}
 
 	return t;
 }
@@ -2813,7 +2950,8 @@ AStreeRef Parser::getSwitchState(AStree * block)
 		{
 			requireToken("case");
 			AStreeRef t = getExpr(sw);
-			if (!t->getType()->equal(tp))
+			requireToken(":");
+			if (!t->getType()->compatible(tp))
 			{
 				addError(std::string("case后的表达式类型与switch不符"));
 			}
@@ -2832,9 +2970,7 @@ AStreeRef Parser::getSwitchState(AStree * block)
 			{
 				break;
 			}
-
-			AStree *ptr = sw;
-			sw->states[index].push_back(getStatement(ptr));
+			sw->states[index].push_back(getStatement(sw));
 		}
 
 	}
@@ -2943,7 +3079,8 @@ AStreeRef Parser::getForState(AStree * block)
 	requireToken("for");
 	requireToken("(");
 	
-	if (data->token.peek(0).isKeyWord() || !findSymbol(data->token.peek(0).getString())->isVariable)
+	symbol *name = findSymbol(data->token.peek(0).getString());
+	if (data->token.peek(0).isKeyWord() || name&&name->isVariable)
 	{
 		f->ini = getVariableDefState(block);
 	}
@@ -3240,6 +3377,39 @@ AStreeRef Parser::makeAssignExpr(AStreeRef left, AStreeRef right)
 	return AStreeRef();
 }
 
+AStreeRef Parser::makeLess(AStreeRef left, AStreeRef right)
+{
+	AStreeRef add = std::make_unique<LessExpr>();
+	add->block = left->block;
+	add->function = data->currentFunction;
+
+	auto *add1 = add->toLess();
+	add1->thisType = data->allTypes[0].get();
+
+	if (left->getType()->isPointer())
+	{
+		if (!right->getType()->isPointer())
+		{
+			addError(std::string("必须具有指针类型"));
+		}
+
+		add1->left = std::move(left);
+		add1->right = std::move(right);
+	}
+	else
+	{
+		if (!left->getType()->isBasic() || !right->getType()->isBasic())
+		{
+			addError(std::string("必须具有数值类型"));
+		}
+
+		add1->left = std::move(left);
+		add1->right = std::move(right);
+	}
+
+	return add;
+}
+
 StructDef * Parser::getStructDef(int index)
 {
 	return &data->allStructDef[index];
@@ -3531,8 +3701,28 @@ IniRef Parser::getIni(Types * type,AStree *block)
 	data->token.read();
 
 	bool isBaracket = false;
-	//可以直接初始化
-	if (type->isArray() || type->isStruct() || type->isUnion())
+	bool isCustom = false;
+
+	if (type->isStruct() || type->isUnion())
+	{
+		isCustom = true;
+	}
+
+	if (data->token.peek(0).getString() != "{")
+	{
+		IniRef v = std::make_unique<IniList>();
+		v->type = type;
+		v->expr = getExpr(block, false);
+		
+		if (!type->compatible(v->expr->getType()))
+		{
+			addError(std::string("不兼容的初始化类型"));
+		}
+
+		return v;
+	}
+
+	if (isCustom|| type->isUnion())
 	{
 		isBaracket = true;
 	}

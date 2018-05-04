@@ -8,6 +8,7 @@
 Types *IntLiteralExpr::thisType;
 Types *RealLiteralExpr::thisType;
 Types *StringLiteralExpr::thisType;
+Types *LessExpr::thisType;
 
 char getChar(Result t)
 {
@@ -222,6 +223,11 @@ bool AStree::isAdd()
 	return false;
 }
 
+bool AStree::isLess()
+{
+	return false;
+}
+
 bool AStree::parseCondition(Result res)
 {
 	char *data = (char *)res.value + res.offset;
@@ -235,6 +241,11 @@ bool AStree::parseCondition(Result res)
 	}
 
 	return false;
+}
+
+LessExpr * AStree::toLess()
+{
+	return dynamic_cast<LessExpr *>(this);
 }
 
 AddExpr * AStree::toAdd()
@@ -749,6 +760,8 @@ Result ReturnState::eval()
 	if (expr.get() != nullptr)
 	{
 		Result t=expr->eval();
+		char *s = (char *)t.value + t.offset;
+		int *ttt = (int *)s;
 		function->setReturned();
 		auto vv = cast(t, getType());
 		function->setReturnValue(vv.buffer);
@@ -782,7 +795,10 @@ AStreeRef IfState::copy(FunctionDef * fun, AStree * block)
 	auto *ifs = t->toIfState();
 	ifs->condition = condition->copy(fun,block);
 	ifs->conTrue = conTrue->copy(fun, block);
-	ifs->conFalse = conFalse->copy(fun, block);
+	if (ifs->conFalse.get())
+	{
+		ifs->conFalse = conFalse->copy(fun, block);
+	}
 
 	return t;
 }
@@ -1009,13 +1025,15 @@ Result SwitchState::eval()
 		else
 		{
 			Result s = conditions[i]->eval();
-			memcpy(buffer, (char *)s.value + s.offset, s.type->getSize());
-
+			EvalValue vv = cast(s, v.type);
+			memcpy(test,vv.buffer, v.type->getSize());
 			if (memcmp(buffer, test, s.type->getSize()) == 0)
 			{
 				startIndex = i;
 				break;
 			}
+
+			vv.release();
 		}
 	}
 
@@ -1225,6 +1243,13 @@ IniRef IniList::copy(FunctionDef *fun,AStree *block)
 {
 	IniRef ir = std::make_unique<IniList>();
 	ir->type = type;
+
+	if (expr.get())
+	{
+		ir->expr = expr->copy(fun, block);
+		return ir;
+	}
+
 	for (int i = 0; i < offset.size(); ++i)
 	{
 		ir->offset.push_back(offset[i]);
@@ -1277,9 +1302,9 @@ Result IdExpr::eval()
 	}
 
 	/*
-	对数组求值不返回值，返回地址
+	对数组求值不返回值，返回地址，但对于参数中的数组来说，它的值本身就是地址（参数中的数组视为指针）
 	*/
-	if (thisType->isArray())
+	if (reg!=Arg&&thisType->isArray())
 	{
 		int off = function->getOffset();
 		char *local = (char *)function->getLocal()+off;//指针指向栈空间
@@ -2370,6 +2395,8 @@ Result ArrayAccessExpr::eval()
 	char *idx =(char *)i.value + i.offset;
 	int size = i.type->getSize();
 	long long id;
+	bool isArray = false;
+	int maxIndex = -1;
 
 	if (size == 1)
 	{
@@ -2425,7 +2452,15 @@ Result ArrayAccessExpr::eval()
 	}
 	else
 	{
-		r.type = addr->getType()->toArray()->dataType;
+		ArrayType *arr = addr->getType()->toArray();
+		r.type = arr->dataType;
+		isArray = true;
+		maxIndex = arr->capacity;
+	}
+
+	if (isArray&&id >= maxIndex)
+	{
+		throw std::exception("数组越界");
 	}
 
 	char *s = (char *)t.value + t.offset;//指针本身的地址，是一个二级指针
@@ -2561,17 +2596,21 @@ Result MemberAccessPtr::eval()
 
 	Result t;
 	t.type = thisType;
-	char *s = (char *)r.value + r.offset + offset;
+	char *s = (char *)r.value + r.offset;
 
 	if (thisType->isArray())
 	{
+		char *x = *(char **)s;
+		x += offset;
 		t.value = (char *)function->getLocal() + function->getOffset();
 		t.offset = 0;
-		*(char **)t.value = s;
+		*(char **)t.value = x;
 	}
 	else
 	{
-		t.value = s;
+		char *x = *(char **)s;
+		x += offset;
+		t.value = x;
 		t.offset = 0;
 	}
 
@@ -2647,18 +2686,38 @@ Result FuncallExpr::eval()
 			break;
 		}
 		Result r = args[i]->eval();
-		auto vv = cast(r, ft->argsType[i]);
-		f->addArgValue(vv.buffer, ft->argsType[i]->getSize());
-		function->setOffset(ofs+ ft->argsType[i]->getSize());
-		vv.release();
+		if (ft->argsType[i]->isArray())
+		{
+			char *s = (char *)r.value + r.offset;
+			int *x = *(int **)s;
+			f->addArgValue(&x,sizeof(void *));
+			function->setOffset(ofs + sizeof(void *));
+		}
+		else
+		{
+			auto vv = cast(r, ft->argsType[i]);
+			f->addArgValue(vv.buffer, ft->argsType[i]->getSize());
+			function->setOffset(ofs + ft->argsType[i]->getSize());
+			vv.release();
+		}
 	}
 
 	for (;i<args.size(); ++i)
 	{
 		int ofs = function->getOffset();
 		Result r=args[i]->eval();
-		f->addArgValue((char *)r.value+r.offset, r.type->getSize());
-		function->setOffset(ofs + r.type->getSize());
+		if (args[i]->getType()->isArray())
+		{
+			char *s = (char *)r.value + r.offset;
+			int *x = *(int **)s;
+			f->addArgValue(&x, sizeof(void *));
+			function->setOffset(ofs + sizeof(void *));
+		}
+		else
+		{
+			f->addArgValue((char *)r.value + r.offset, r.type->getSize());
+			function->setOffset(ofs + r.type->getSize());
+		}
 	}
 
 	function->setOffset(off);
@@ -2731,7 +2790,7 @@ bool ConditionExpr::isCondition()
 
 AStreeRef AddExpr::copy(FunctionDef * fun, AStree * block)
 {
-	AStreeRef t = std::make_unique<ConditionExpr>();
+	AStreeRef t = std::make_unique<AddExpr>();
 	t->block = block;
 	t->function = fun;
 	t->type = type;
@@ -2935,6 +2994,76 @@ bool AddExpr::isLeftValue()
 }
 
 bool AddExpr::isAdd()
+{
+	return true;
+}
+
+AStreeRef LessExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<LessExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toLess();
+	neg->left = std::move(left->copy(fun, block));
+	neg->right = std::move(right->copy(fun, block));
+
+	return t;
+}
+
+Types * LessExpr::getType()
+{
+	return thisType;
+}
+
+Result LessExpr::eval()
+{
+	Result t;
+	bool less;
+
+	if (thisType->isPointer())
+	{
+		Result r = left->eval();
+		char *s = (char *)r.value + r.offset;
+		char *ptr = *(char **)s;
+		Result r1 = right->eval();
+		s = (char *)r1.value + r1.offset;
+		char *ptr2= *(char **)s;
+		less = ptr < ptr2;
+	}
+	else
+	{
+		bool isFloat = left->getType()->toBasic()->isFloat || right->getType()->toBasic()->isFloat;
+		if (isFloat)
+		{
+			double a = toT<double>(left->eval());
+			double b = toT<double>(right->eval());
+			t.type = thisType;
+			t.value = (char *)function->getLocal() + function->getOffset();
+			t.offset = 0;
+		}
+		else
+		{
+			long long a = toT<long long>(left->eval());
+			long long b = toT<long long>(right->eval());
+			t.type = thisType;
+			t.value = (char *)function->getLocal() + function->getOffset();
+			t.offset = 0;
+			less = a < b;
+		}
+	}
+
+	wirteLong(t, thisType, less);
+	return t;
+}
+
+bool LessExpr::isLeftValue()
+{
+	return false;
+}
+
+bool LessExpr::isLess()
 {
 	return true;
 }

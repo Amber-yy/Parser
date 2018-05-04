@@ -7,6 +7,7 @@ class Types;
 class AStree;
 
 using AStreeRef = std::unique_ptr<AStree>;
+typedef char *(*LibFunction)(void *, int);
 
 class FunctionDef
 {
@@ -24,6 +25,7 @@ public:
 	void setStack(void *s);
 	void addArgValue(void *s, int size);
 	void setReturnValue(void *s);
+	void *setLib(LibFunction fun);
 	void *getReturnValue();
 	void run();
 	int getOffset();

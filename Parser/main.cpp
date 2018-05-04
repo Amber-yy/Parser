@@ -8,6 +8,7 @@ int main()
 	try
 	{
 		p.parse("e:/test.c");
+		p.run();
 	}
 	catch (std::string &e)
 	{
