@@ -157,6 +157,7 @@ public:
 	virtual bool canInstance() override;
 	virtual bool isFunction()override;
 	virtual int getSize()override;
+	bool libCompatible(Types *tp);
 	bool hasVariableArg();
 	Types *returnType;
 	std::vector<std::string> args;

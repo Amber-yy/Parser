@@ -38,7 +38,7 @@ std::string Preprocessor::getCurrentDir()
 {
 
 #ifdef DEBUG
-	return "E:\Visual Studio 2015\MyProjects\Preprocessor\Preprocessor";
+	return "E:\Visual Studio 2015\MyProjects\Parser\Parser";
 #endif 
 
 }

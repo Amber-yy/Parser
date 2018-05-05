@@ -223,7 +223,27 @@ bool AStree::isAdd()
 	return false;
 }
 
+bool AStree::isSub()
+{
+	return false;
+}
+
 bool AStree::isLess()
+{
+	return false;
+}
+
+bool AStree::isMul()
+{
+	return false;
+}
+
+bool AStree::isDiv()
+{
+	return false;
+}
+
+bool AStree::isAssign()
 {
 	return false;
 }
@@ -241,6 +261,26 @@ bool AStree::parseCondition(Result res)
 	}
 
 	return false;
+}
+
+AssignExpr * AStree::toAssign()
+{
+	return dynamic_cast<AssignExpr *>(this);
+}
+
+DivExpr * AStree::toDiv()
+{
+	return dynamic_cast<DivExpr *>(this);
+}
+
+MulExpr * AStree::toMul()
+{
+	return dynamic_cast<MulExpr *>(this);
+}
+
+SubExpr * AStree::toSub()
+{
+	return dynamic_cast<SubExpr *>(this);
 }
 
 LessExpr * AStree::toLess()
@@ -1121,15 +1161,13 @@ Result ForState::eval()
 		{
 			break;
 		}
-
-		if (con.get() != nullptr && !parseCondition(con->eval()))
-		{
-			break;
-		}
-
 		if (after.get() != nullptr)
 		{
 			after->eval();
+		}
+		if (con.get() != nullptr && !parseCondition(con->eval()))
+		{
+			break;
 		}
 	}
 
@@ -1964,13 +2002,19 @@ Types * TypeTranExpr::getType()
 Result TypeTranExpr::eval()
 {
 	Result t=target->eval();
+	auto vv=cast(t, targetType);
+	char *buffer= (char *)function->getLocal() + function->getOffset();
+	t.value = buffer;
+	t.offset = 0;
+	memcpy(buffer, vv.buffer, targetType->getSize());
 	t.type = targetType;
+	vv.release();
 	return t;
 }
 
 bool TypeTranExpr::isLeftValue()
 {
-	return target->isLeftValue();
+	return false;
 }
 
 bool TypeTranExpr::isTypeTran()
@@ -2460,7 +2504,7 @@ Result ArrayAccessExpr::eval()
 
 	if (isArray&&id >= maxIndex)
 	{
-		throw std::exception("数组越界");
+		throw std::string("数组越界");
 	}
 
 	char *s = (char *)t.value + t.offset;//指针本身的地址，是一个二级指针
@@ -3064,6 +3108,253 @@ bool LessExpr::isLeftValue()
 }
 
 bool LessExpr::isLess()
+{
+	return true;
+}
+
+AStreeRef SubExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<SubExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toSub();
+	neg->thisType = thisType;
+	neg->left = std::move(left->copy(fun, block));
+	neg->right = std::move(right->copy(fun, block));
+
+	return t;
+}
+
+Types * SubExpr::getType()
+{
+	return thisType;
+}
+
+Result SubExpr::eval()
+{
+	Result t;
+
+	if (thisType->isPointer())
+	{
+		Result r = left->eval();
+		char *s = (char *)r.value + r.offset;
+		char *ptr = *(char **)s;
+		Result r1 = right->eval();
+		long long off = toT<long long>(r1);
+		ptr -= off*left->getType()->toPointer()->targetType->getSize();
+		t.type = thisType;
+		t.value = (char *)function->getLocal() + function->getOffset();
+		t.offset = 0;
+		*(char **)t.value = ptr;
+	}
+	else
+	{
+		if (thisType->toBasic()->isFloat)
+		{
+			double a = toT<double>(left->eval());
+			double b = toT<double>(right->eval());
+
+			t.type = thisType;
+			t.value = (char *)function->getLocal() + function->getOffset();
+			t.offset = 0;
+
+			writeDouble(t, thisType, a - b);
+		}
+		else
+		{
+			long long a = toT<long long>(left->eval());
+			long long b = toT<long long>(right->eval());
+
+			t.type = thisType;
+			t.value = (char *)function->getLocal() + function->getOffset();
+			t.offset = 0;
+
+			wirteLong(t, thisType, a - b);
+		}
+	}
+
+	return t;
+}
+
+bool SubExpr::isLeftValue()
+{
+	return false;
+}
+
+bool SubExpr::isSub()
+{
+	return true;
+}
+
+AStreeRef MulExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<MulExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toMul();
+	neg->thisType = thisType;
+	neg->left = std::move(left->copy(fun, block));
+	neg->right = std::move(right->copy(fun, block));
+
+	return t;
+}
+
+Types * MulExpr::getType()
+{
+	return thisType;
+}
+
+Result MulExpr::eval()
+{
+	Result t;
+
+	if (thisType->toBasic()->isFloat)
+	{
+		double a = toT<double>(left->eval());
+		double b = toT<double>(right->eval());
+
+		t.type = thisType;
+		t.value = (char *)function->getLocal() + function->getOffset();
+		t.offset = 0;
+
+		writeDouble(t, thisType, a * b);
+	}
+	else
+	{
+		long long a = toT<long long>(left->eval());
+		long long b = toT<long long>(right->eval());
+
+		t.type = thisType;
+		t.value = (char *)function->getLocal() + function->getOffset();
+		t.offset = 0;
+
+		wirteLong(t, thisType, a * b);
+	}
+
+	return t;
+}
+
+bool MulExpr::isLeftValue()
+{
+	return false;
+}
+
+bool MulExpr::isMul()
+{
+	return true;
+}
+
+AStreeRef DivExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<DivExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toDiv();
+	neg->thisType = thisType;
+	neg->left = std::move(left->copy(fun, block));
+	neg->right = std::move(right->copy(fun, block));
+
+	return t;
+}
+
+Types * DivExpr::getType()
+{
+	return thisType;
+}
+
+Result DivExpr::eval()
+{
+	Result t;
+
+	if (thisType->toBasic()->isFloat)
+	{
+		double a = toT<double>(left->eval());
+		double b = toT<double>(right->eval());
+
+		if (!b)
+		{
+			throw std::string("被除数不能为0");
+		}
+
+		t.type = thisType;
+		t.value = (char *)function->getLocal() + function->getOffset();
+		t.offset = 0;
+
+		writeDouble(t, thisType, a / b);
+	}
+	else
+	{
+		long long a = toT<long long>(left->eval());
+		long long b = toT<long long>(right->eval());
+		
+		if (!b)
+		{
+			throw std::string("被除数不能为0");
+		}
+
+		t.type = thisType;
+		t.value = (char *)function->getLocal() + function->getOffset();
+		t.offset = 0;
+
+		wirteLong(t, thisType, a / b);
+	}
+
+	return t;
+}
+
+bool DivExpr::isLeftValue()
+{
+	return false;
+}
+
+bool DivExpr::isDiv()
+{
+	return true;
+}
+
+AStreeRef AssignExpr::copy(FunctionDef * fun, AStree * block)
+{
+	AStreeRef t = std::make_unique<AssignExpr>();
+	t->block = block;
+	t->function = fun;
+	t->type = type;
+
+	auto *neg = t->toAssign();
+	neg->thisType = thisType;
+	neg->left = std::move(left->copy(fun, block));
+	neg->right = std::move(right->copy(fun, block));
+
+	return t;
+}
+
+Types * AssignExpr::getType()
+{
+	return thisType;
+}
+
+Result AssignExpr::eval()
+{
+	Result t = right->eval();
+	EvalValue vv = cast(t, thisType);
+	Result r = left->eval();
+	char *buffer = (char *)r.value + r.offset;
+	memcpy(buffer, vv.buffer, thisType->getSize());
+	vv.release();
+	return r;
+}
+
+bool AssignExpr::isLeftValue()
+{
+	return false;
+}
+
+bool AssignExpr::isAssign()
 {
 	return true;
 }

@@ -145,6 +145,7 @@ struct Parser::Data
 	int currentLevel;
 	int index;
 	int mainIndex;
+	int allocTime;
 	bool funcitonDec;
 };
 
@@ -221,7 +222,7 @@ void Parser::parse(const std::string &file)
 				char *x = (char *)data->globalRegion.data + n;
 				FunctionDef *foo = *(FunctionDef **)x;
 				auto it = data->libFunctions.find(s.first);
-				if (it == data->libFunctions.end() || !it->second.tp->equal(s.second.type))
+				if (it == data->libFunctions.end() || !it->second.tp->toFunction()->libCompatible(s.second.type))
 				{
 					addError(std::string("有未定义的全局符号") + s.first);
 				}
@@ -232,13 +233,17 @@ void Parser::parse(const std::string &file)
 				addError(std::string("有未定义的全局符号") + s.first);
 			}
 		}
-
 	}
 
+	if (data->mainIndex == -1)
+	{
+		addError(std::string("没有发现main的定义"));
+	}
 }
 
 void Parser::run()
 {
+	data->allocTime = 0;
 	FunctionDef *MainFun = data->allFunctions[data->mainIndex].get();
 	//time_t start = clock();
 	MainFun->setStack(data->stack);
@@ -246,9 +251,6 @@ void Parser::run()
 	//time_t end = clock();
 	//std::cout << end - start << '\n';
 	//std::cout<<*(int *)MainFun->getReturnValue();
-
-	int a;
-	a = 10;
 }
 
 void Parser::getLine()
@@ -1539,8 +1541,8 @@ char *Allocate(void *buffer, int size)
 {
 	char *result = new char[4];
 
-	int size = *(int *)buffer;
-	*(void **)result = malloc(size);
+	int n = *(int *)buffer;
+	*(void **)result = malloc(n);
 
 	return result;
 }
@@ -1557,7 +1559,7 @@ char *Collect(void *buffer, int size)
 
 void Parser::createLib()
 {
-	/*printf函数*/
+	/*printf和scanf函数*/
 	{
 		TypeRef t = std::make_unique<FunctionType>();
 		auto *foo = t->toFunction();
@@ -1575,12 +1577,33 @@ void Parser::createLib()
 		data->libFunctions.insert(std::pair<std::string, LibFunctionData>("printf", {foo,&print}));
 		data->libFunctions.insert(std::pair<std::string, LibFunctionData>("scanf", { foo,&scan}));
 	}
+
+	/*malloc和free函数*/
 	{
-		
-	
+		/*malloc*/
+		TypeRef t = std::make_unique<FunctionType>();
+		auto *foo = t->toFunction();
+		foo->argsType.push_back(data->allTypes[10].get());
+
+		/*void * */
+		TypeRef ptr = std::make_unique<PointerType>();
+		auto *ptr1 = ptr->toPointer();
+		ptr1->targetType = data->allTypes[22].get();
+		foo->returnType = ptr1;
+
+		/*free*/
+		TypeRef t2 = std::make_unique<FunctionType>();
+		auto *foo2 = t2->toFunction();
+		foo2->argsType.push_back(ptr1);
+		foo2->returnType= data->allTypes[22].get();
+
+		data->libFunctions.insert(std::pair<std::string, LibFunctionData>("malloc", { foo,&Allocate }));
+		data->libFunctions.insert(std::pair<std::string, LibFunctionData>("free", { foo2,&Collect }));
+
+		data->allTypes.push_back(std::move(t));
+		data->allTypes.push_back(std::move(t2));
+		data->allTypes.push_back(std::move(ptr));
 	}
-
-
 
 }
 
@@ -2632,7 +2655,7 @@ AStreeRef Parser::getPrimary(AStree *block)
 	/*类型转换*/
 	symbol *t = findSymbol(data->token.peek(1).getString());
 
-	if (data->token.peek(0).getString() == "("&&data->token.peek(1).isKeyWord() || (t&&t->isVariable))
+	if (data->token.peek(0).getString() == "("&&data->token.peek(1).isKeyWord() || (t&&!t->isVariable))
 	{
 		requireToken("(");
 		Types *pre = peekType();
@@ -3359,22 +3382,165 @@ AStreeRef Parser::makeAddExpr(AStreeRef left, AStreeRef right)
 
 AStreeRef Parser::makeSubExpr(AStreeRef left, AStreeRef right)
 {
-	return AStreeRef();
+	AStreeRef add = std::make_unique<SubExpr>();
+	add->block = left->block;
+	add->function = data->currentFunction;
+
+	auto *add1 = add->toSub();
+
+	if (left->getType()->isPointer())
+	{
+		if (!right->getType()->isBasic() || right->getType()->toBasic()->isFloat)
+		{
+			addError(std::string("必须具有整数类型"));
+		}
+
+		if (!left->getType()->toPointer()->targetType->canInstance())
+		{
+			addError(std::string("不允许使用不完整的类型"));
+		}
+
+		add1->left = std::move(left);
+		add1->right = std::move(right);
+		add1->thisType = add1->left->getType();
+
+	}
+	else if (right->getType()->isPointer())
+	{
+		if (left->getType()->isBasic() || left->getType()->toBasic()->isFloat)
+		{
+			addError(std::string("必须具有整数类型"));
+		}
+
+		if (!right->getType()->toPointer()->targetType->canInstance())
+		{
+			addError(std::string("不允许使用不完整的类型"));
+		}
+
+		add1->left = std::move(right);
+		add1->right = std::move(left);
+		add1->thisType = add1->left->getType();
+	}
+	else
+	{
+		if (!left->getType()->isBasic() || !right->getType()->isBasic())
+		{
+			addError(std::string("必须具有数值类型"));
+		}
+
+		BasicType *fl = left->getType()->toBasic();
+		BasicType *fr = right->getType()->toBasic();
+		add1->left = std::move(left);
+		add1->right = std::move(right);
+
+		if (fl->isFloat)
+		{
+			add1->thisType = (fr->isFloat&&fr->getSize() > fl->getSize()) ? fr : fl;
+		}
+		else if (fr->isFloat)
+		{
+			add1->thisType = fr;
+		}
+		else
+		{
+			add1->thisType = (fr->getSize() > fl->getSize()) ? fr : fl;
+		}
+
+	}
+
+	return add;
 }
 
 AStreeRef Parser::makeMulExpr(AStreeRef left, AStreeRef right)
 {
-	return AStreeRef();
+	AStreeRef add = std::make_unique<MulExpr>();
+	add->block = left->block;
+	add->function = data->currentFunction;
+
+	auto *add1 = add->toMul();
+
+	if (!left->getType()->isBasic() || !right->getType()->isBasic())
+	{
+		addError(std::string("必须具有数值类型"));
+	}
+
+	BasicType *fl = left->getType()->toBasic();
+	BasicType *fr = right->getType()->toBasic();
+	add1->left = std::move(left);
+	add1->right = std::move(right);
+
+	if (fl->isFloat)
+	{
+		add1->thisType = (fr->isFloat&&fr->getSize() > fl->getSize()) ? fr : fl;
+	}
+	else if (fr->isFloat)
+	{
+		add1->thisType = fr;
+	}
+	else
+	{
+		add1->thisType = (fr->getSize() > fl->getSize()) ? fr : fl;
+	}
+
+	return add;
 }
 
 AStreeRef Parser::makeDiviExpr(AStreeRef left, AStreeRef right)
 {
-	return AStreeRef();
+	AStreeRef add = std::make_unique<DivExpr>();
+	add->block = left->block;
+	add->function = data->currentFunction;
+
+	auto *add1 = add->toDiv();
+
+	if (!left->getType()->isBasic() || !right->getType()->isBasic())
+	{
+		addError(std::string("必须具有数值类型"));
+	}
+
+	BasicType *fl = left->getType()->toBasic();
+	BasicType *fr = right->getType()->toBasic();
+	add1->left = std::move(left);
+	add1->right = std::move(right);
+
+	if (fl->isFloat)
+	{
+		add1->thisType = (fr->isFloat&&fr->getSize() > fl->getSize()) ? fr : fl;
+	}
+	else if (fr->isFloat)
+	{
+		add1->thisType = fr;
+	}
+	else
+	{
+		add1->thisType = (fr->getSize() > fl->getSize()) ? fr : fl;
+	}
+
+	return add;
 }
 
 AStreeRef Parser::makeAssignExpr(AStreeRef left, AStreeRef right)
 {
-	return AStreeRef();
+	AStreeRef add = std::make_unique<AssignExpr>();
+	add->block = left->block;
+	add->function = data->currentFunction;
+	auto *add1 = add->toAssign();
+
+	if (!left->isLeftValue() || left->getType()->isConst)
+	{
+		addError(std::string("表达式必须是可修改的左值"));
+	}
+
+	if (!left->getType()->compatible(right->getType()))
+	{
+		addError(std::string("不兼容的赋值类型"));
+	}
+
+	add1->thisType = left->getType();
+	add1->left = std::move(left);
+	add1->right = std::move(right);
+
+	return add;
 }
 
 AStreeRef Parser::makeLess(AStreeRef left, AStreeRef right)
@@ -4197,7 +4363,10 @@ Types * Parser::parseType(Types * pre, std::list<TypeToken>& tokens,int name,int
 
 				FunctionRef f = std::make_unique<FunctionType>();
 			
-				if (instr == "void")
+				auto baracket = in;
+				addIt(baracket);
+
+				if (instr == "void"&&baracket->token->getString()==")")
 				{
 					auto s = in;
 					addIt(in);

@@ -561,6 +561,45 @@ int FunctionType::getSize()
 	return sizeof(void *);
 }
 
+bool FunctionType::libCompatible(Types *tp)
+{
+	auto tp1 = tp->toFunction();
+
+	if (argsType.size() != tp1->argsType.size())
+	{
+		return false;
+	}
+
+	for (int i = 0; i < argsType.size(); ++i)
+	{
+		if (argsType[i] == tp1->argsType[i])
+		{
+			continue;
+		}
+		else if (!argsType[i]||!tp1->argsType[i])
+		{
+			return false;
+		}
+		else if (argsType[i]->equal(tp1->argsType[i]))
+		{
+			continue;
+		}//¿âº¯Êý
+		else if (argsType[i]->isPointer()&&argsType[i]->toPointer()->targetType->isVoid())
+		{
+			if (!tp1->argsType[i]->isPointer())
+			{
+				return false;
+			}
+		}
+		else 
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
 bool FunctionType::hasVariableArg()
 {
 	return argsType[argsType.size()-1]==nullptr;

@@ -36,6 +36,10 @@ class MemberAccessPtr;
 class FuncallExpr;
 class ConditionExpr;
 class AddExpr;
+class SubExpr;
+class MulExpr;
+class DivExpr;
+class AssignExpr;
 class LessExpr;
 
 enum BlockType
@@ -116,8 +120,16 @@ public:
 	virtual bool isFuncall();
 	virtual bool isCondition();
 	virtual bool isAdd();
+	virtual bool isSub();
 	virtual bool isLess();
+	virtual bool isMul();
+	virtual bool isDiv();
+	virtual bool isAssign();
 	bool parseCondition(Result t);
+	AssignExpr *toAssign();
+	DivExpr *toDiv();
+	MulExpr *toMul();
+	SubExpr *toSub();
 	LessExpr *toLess();
 	AddExpr *toAdd();
 	ConditionExpr *toCondition();
@@ -534,6 +546,58 @@ public:
 	AStreeRef right;
 };
 
+class SubExpr :public AStree
+{
+public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isSub()override;
+	Types *thisType;
+	AStreeRef left;
+	AStreeRef right;
+};
+
+class MulExpr :public AStree
+{
+public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isMul()override;
+	Types *thisType;
+	AStreeRef left;
+	AStreeRef right;
+};
+
+class DivExpr :public AStree
+{
+public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isDiv()override;
+	Types *thisType;
+	AStreeRef left;
+	AStreeRef right;
+};
+
+class AssignExpr :public AStree
+{
+public:
+	virtual AStreeRef copy(FunctionDef *fun, AStree*block)override;
+	virtual Types*getType()override;
+	virtual Result eval()override;
+	virtual bool isLeftValue()override;
+	virtual bool isAssign()override;
+	Types *thisType;
+	AStreeRef left;
+	AStreeRef right;
+};
+
 class LessExpr :public AStree
 {
 public:
@@ -547,3 +611,4 @@ public:
 	AStreeRef left;
 	AStreeRef right;
 };
+
